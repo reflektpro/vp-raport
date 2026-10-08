@@ -144,13 +144,23 @@
     const s = d || t.toLowerCase();
     return s.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
   }
+  function points(){
+    return $("nPoint").value.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+  }
+  function pointPhrase(){
+    const ps = points();
+    if (!ps.length) return "пунктом ___";
+    if (ps.length === 1) return "пунктом " + ps[0];
+    if (ps.length === 2) return "пунктами " + ps[0] + " и " + ps[1];
+    return "пунктами " + ps.slice(0, -1).join(", ") + " и " + ps[ps.length - 1];
+  }
   function refill(){
     document.querySelectorAll("#kind button").forEach(b => b.classList.toggle("on", b.dataset.kind === state.kind));
     $("kindWord").textContent = state.kind === "pred" ? "предупреждения" : "выговора";
     $("rankShow").textContent = rankDat($("tRank").value) || "________";
     $("nameShow").textContent = $("tName").value.trim() || "________";
     $("passShow").textContent = $("tPass").value.trim() || "______";
-    $("normPoint").textContent = $("nPoint").value.trim() || "___";
+    $("normPoints").textContent = pointPhrase();
     $("normPart").textContent = $("nPart").value.trim() || "___";
     $("normChapter").textContent = $("nChapter").value.trim() || "___";
     const list = items();
@@ -233,10 +243,11 @@
 
   function validate(){
     let ok = true, first = null;
-    ["tRank","tName","tPass","fromPos","fromRank","fromName","nPoint","nPart","nChapter"].forEach(id => {
+    ["tRank","tName","tPass","fromPos","fromRank","fromName","nPart","nChapter"].forEach(id => {
       const el = $(id);
       if (!el.value.trim()){ el.classList.add("bad"); ok = false; first = first || el; }
     });
+    if (!points().length){ $("nPoint").classList.add("bad"); ok = false; first = first || $("nPoint"); }
     if (!unit()) { ok = false; status("Выбери подразделение.", "err"); }
     else if (!ok) status("Заполни подсвеченные красным поля.", "err");
     if (first) first.focus();
@@ -272,7 +283,7 @@
       `**Подразделение:** ${u ? u.name : ""}`,
       `**Кому:** ${$("tRank").value.trim()} ${$("tName").value.trim()} | паспорт ${$("tPass").value.trim()}`,
       `**От:** ${$("fromPos").value.trim()}, ${$("fromRank").value.trim()} ${$("fromName").value.trim()}`,
-      `**Норма:** пункт ${$("nPoint").value.trim()} части ${$("nPart").value.trim()} главы ${$("nChapter").value.trim()} Дисциплинарного устава`,
+      `**Норма:** ${pointPhrase()} части ${$("nPart").value.trim()} главы ${$("nChapter").value.trim()} Дисциплинарного устава`,
       `**Отработка:** ${items().join("; ")}`
     ];
     return {
