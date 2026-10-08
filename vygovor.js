@@ -65,6 +65,65 @@
     if (SAVED.includes(el.id)) localStorage.setItem("vp_"+el.id, el.value.trim());
     if (["fromRank","fromName"].includes(el.id)) updateSignature();
   }));
+
+  const posOptions = [...document.querySelectorAll("#positions option")].map(o => o.value || o.textContent);
+  const posList = document.createElement("div");
+  posList.className = "pos-suggest";
+  posList.hidden = true;
+  document.body.appendChild(posList);
+  let posIndex = -1;
+  function placePos(){
+    const r = $("fromPos").getBoundingClientRect();
+    posList.style.left = Math.max(8, r.left) + "px";
+    posList.style.top = (r.bottom + 4) + "px";
+    posList.style.width = Math.max(r.width, 280) + "px";
+  }
+  function showPos(){
+    const q = $("fromPos").value.trim().toLowerCase();
+    const exact = posOptions.some(p => p.toLowerCase() === q);
+    const hits = (!q || exact) ? posOptions : posOptions.filter(p => p.toLowerCase().includes(q));
+    posIndex = -1;
+    if (!hits.length) { posList.hidden = true; return; }
+    posList.innerHTML = hits.map(p => "<button type=\"button\">" + p.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])) + "</button>").join("");
+    placePos();
+    posList.hidden = false;
+  }
+  function pickPos(text){
+    const el = $("fromPos");
+    el.value = text;
+    el.classList.remove("bad");
+    localStorage.setItem("vp_fromPos", text.trim());
+    growPos();
+    posList.hidden = true;
+    el.focus();
+  }
+  $("fromPos").addEventListener("focus", showPos);
+  $("fromPos").addEventListener("input", showPos);
+  $("fromPos").addEventListener("keydown", e => {
+    const buttons = [...posList.querySelectorAll("button")];
+    if (posList.hidden || !buttons.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      posIndex = e.key === "ArrowDown" ? Math.min(posIndex + 1, buttons.length - 1) : Math.max(posIndex - 1, 0);
+      buttons.forEach((b, i) => b.classList.toggle("on", i === posIndex));
+      buttons[posIndex].scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter" && posIndex >= 0) {
+      e.preventDefault();
+      pickPos(buttons[posIndex].textContent);
+    } else if (e.key === "Escape") posList.hidden = true;
+  });
+  posList.addEventListener("mousedown", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    e.preventDefault();
+    pickPos(b.textContent);
+  });
+  document.addEventListener("click", e => {
+    if (e.target === $("fromPos") || posList.contains(e.target)) return;
+    posList.hidden = true;
+  });
+  window.addEventListener("resize", () => { if (!posList.hidden) placePos(); });
+  window.addEventListener("scroll", () => { if (!posList.hidden) placePos(); }, true);
   ["tRank","tName","tPass"].forEach(id => $(id).addEventListener("input", () => {
     $(id).classList.remove("bad");
     if (id === "tPass") { dropNumber(); scheduleHistory(); }
