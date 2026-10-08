@@ -4,8 +4,8 @@ export default {
   async fetch(req, env) {
     const cors = {
       "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Content-Type": "text/plain; charset=utf-8"
     };
     const fail = (text, status) => new Response(text, { status, headers: cors });
@@ -15,6 +15,11 @@ export default {
     });
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (env.ALLOWED_ORIGIN && req.headers.get("Origin") !== env.ALLOWED_ORIGIN) return fail("Forbidden", 403);
+
+    const url = new URL(req.url);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    if (path === "/rules" && req.method === "GET") return rulesGet(env, json, fail);
+    if (path.startsWith("/admin")) return adminRoute(req, env, url, json, fail);
 
     if (req.method === "GET") {
       const passport = digits(new URL(req.url).searchParams.get("passport") || "");
@@ -86,6 +91,102 @@ export default {
   }
 };
 
+
+function authed(req, env) {
+  const token = String(env.ADMIN_TOKEN || "");
+  const got = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token || got.length !== token.length) return false;
+  let n = 0;
+  for (let i = 0; i < token.length; i++) n |= token.charCodeAt(i) ^ got.charCodeAt(i);
+  return n === 0;
+}
+async function kvReady(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)").run();
+}
+async function kvGet(env, key) {
+  await kvReady(env);
+  const row = await env.DB.prepare("SELECT v FROM kv WHERE k = ?").bind(key).first();
+  if (!row || !row.v) return null;
+  try { return JSON.parse(row.v); } catch { return null; }
+}
+async function kvSet(env, key, value) {
+  await kvReady(env);
+  const text = JSON.stringify(value);
+  if (text.length > 80000) throw new Error("too big");
+  await env.DB.prepare("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(key, text).run();
+}
+async function rulesGet(env, json, fail) {
+  try {
+    return json({ promo: await kvGet(env, "promo"), vygovor: await kvGet(env, "vygovor") });
+  } catch (e) {
+    return fail("База правил недоступна", 500);
+  }
+}
+function promoOk(p) {
+  return !!(p && Array.isArray(p.acts) && p.acts.length && p.acts.length <= 80 && p.ladder && typeof p.ladder === "object");
+}
+function vygOk(v) {
+  return !!(v && Array.isArray(v.units) && v.units.length && v.units.length <= 30);
+}
+async function readBody(req) {
+  try { return await req.json(); } catch { return null; }
+}
+async function adminRoute(req, env, url, json, fail) {
+  if (!authed(req, env)) return fail("Неверный пароль", 401);
+  const path = url.pathname.replace(/\/+$/, "");
+  try {
+    if (path === "/admin/rules" && req.method === "GET") return rulesGet(env, json, fail);
+    if (path === "/admin/rules" && req.method === "PUT") {
+      const body = await readBody(req);
+      if (!body || !promoOk(body.promo) || !vygOk(body.vygovor)) return fail("Правила не приняты", 400);
+      await kvSet(env, "promo", body.promo);
+      await kvSet(env, "vygovor", body.vygovor);
+      return json({ ok: true });
+    }
+    if (path === "/admin/orders" && req.method === "GET") {
+      const passport = digits(url.searchParams.get("passport") || "");
+      const rows = await env.DB.prepare(
+        "SELECT id, num, kind, passport, name, rank, unit_name AS unit, issued, reason FROM orders WHERE (? = '' OR passport = ?) ORDER BY id DESC LIMIT 300"
+      ).bind(passport, passport).all();
+      return json({ orders: (rows.results || []).map(o => ({ ...o, num: fixNum(o.num) })) });
+    }
+    if (path === "/admin/orders" && req.method === "PATCH") {
+      const b = await readBody(req);
+      const id = Number(b && b.id);
+      if (!id) return fail("Нет записи", 400);
+      const kind = b.kind === "pred" ? "pred" : "vyg";
+      await env.DB.prepare(
+        "UPDATE orders SET num = ?, kind = ?, passport = ?, name = ?, rank = ?, unit_name = ?, issued = ?, reason = ? WHERE id = ?"
+      ).bind(clip(b.num, 20), kind, digits(b.passport), clip(b.name, 80), clip(b.rank, 40), clip(b.unit, 160), clip(b.issued, 40), clip(b.reason, 160), id).run();
+      return json({ ok: true });
+    }
+    if (path === "/admin/orders" && req.method === "DELETE") {
+      const id = Number(url.searchParams.get("id"));
+      if (!id) return fail("Нет записи", 400);
+      await env.DB.prepare("DELETE FROM orders WHERE id = ?").bind(id).run();
+      return json({ ok: true });
+    }
+    if (path === "/admin/seq" && req.method === "GET") {
+      const seq = await env.DB.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'orders'").first();
+      const max = await env.DB.prepare("SELECT MAX(id) AS m FROM orders").first();
+      const cur = Number((seq && seq.seq) || (max && max.m) || 0);
+      return json({ next: cur + 1, last: Number((max && max.m) || 0) });
+    }
+    if (path === "/admin/seq" && req.method === "POST") {
+      const b = await readBody(req);
+      const next = Number(b && b.next);
+      if (!Number.isInteger(next) || next < 1 || next > 9999) return fail("Номер от 1 до 9999", 400);
+      const upd = await env.DB.prepare("UPDATE sqlite_sequence SET seq = ? WHERE name = 'orders'").bind(next - 1).run();
+      if (!upd.meta || !upd.meta.changes) {
+        await env.DB.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('orders', ?)").bind(next - 1).run();
+      }
+      return json({ ok: true, next });
+    }
+    return fail("Нет такого раздела", 404);
+  } catch (e) {
+    return fail("Не сохранилось", 500);
+  }
+}
 function fixNum(s) {
   s = String(s || "");
   const ok = (str) => {

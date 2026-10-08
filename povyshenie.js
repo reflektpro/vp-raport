@@ -1,5 +1,9 @@
-(() => {
-  const C = window.VP_CONFIG || {}, P = window.PROMO;
+(async () => {
+  const C = window.VP_CONFIG || {};
+  const live = window.VP_RULES ? await window.VP_RULES : null;
+  if (live && live.promo && Array.isArray(live.promo.acts)) window.PROMO = live.promo;
+  if (live && live.vygovor && Array.isArray(live.vygovor.units)) window.VYG = live.vygovor;
+  const P = window.PROMO;
   const $ = id => document.getElementById(id);
   const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   const SAVED = ["fromPos","fromRank","fromName"];

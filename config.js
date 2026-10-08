@@ -22,3 +22,18 @@ window.VP_CONFIG = {
   stampInner: "ВОЕННАЯ ПОЛИЦИЯ ✶ ВОИНСКАЯ ЧАСТЬ №12132",
   stampCenter: "ГУ ВП"
 };
+
+window.VP_RULES = (async () => {
+  const C = window.VP_CONFIG;
+  if (!C || !C.endpoint) return null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(String(C.endpoint).replace(/\/$/, "") + "/rules", { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+})();
