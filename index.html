@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГУ ВП · Электронный рапорт</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Tinos:ital,wght@0,400;0,700;1,400&family=Oswald:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <img src="emblem.png" alt="">
+  <div>
+    <div class="t1">ГЛАВНОЕ УПРАВЛЕНИЕ ВОЕННОЙ ПОЛИЦИИ</div>
+    <div class="t2">Электронный рапорт на взыскание</div>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="desk">
+    <div class="paper" id="paper">
+      <div class="emblem"><img src="emblem.png" alt=""></div>
+      <div class="hdr" id="hdr"></div>
+
+      <div class="addressee">
+        <div id="addr"></div>
+        <div class="addr-from">от <span id="addrFrom">________________</span></div>
+      </div>
+
+      <h1 class="title">Р А П О Р Т</h1>
+      <div class="subtitle">О совершении дисциплинарного проступка</div>
+      <div class="meta">
+        <input class="f" id="date" data-fit>
+        <span id="city"></span>
+        <span>№<input class="f" id="num" data-fit></span>
+      </div>
+      <div class="rule"></div>
+
+      <p class="para">Рапортую, что военнослужащий
+        <input class="f req" id="tRank" data-fit placeholder="звание" list="ranks" autocomplete="off">
+        <input class="f req" id="tName" data-fit placeholder="Имя Фамилия">
+        (паспорт №&nbsp;<input class="f req" id="tPass" data-fit placeholder="000-000">)
+        совершил дисциплинарный проступок.</p>
+
+      <ol class="items">
+        <li><b>Суть нарушения:</b>
+          <textarea class="f req" id="what" rows="2" placeholder="когда, где, обстоятельства, действия нарушителя"></textarea></li>
+        <li><b>Нарушенные нормы:</b>
+          <textarea class="f req" id="norms" rows="1" placeholder="что нарушено, со ссылкой на статьи/пункты устава"></textarea></li>
+        <li><b>Доказательства:</b>
+          <textarea class="f" id="proof" rows="1" placeholder="видео / фото / рапорты / иные материалы"></textarea></li>
+        <li><b>Облегчающие/отягчающие факторы:</b>
+          <textarea class="f" id="factors" rows="1" placeholder="например: продолжил после предупреждения; полное раскаяние; малозначительность"></textarea></li>
+      </ol>
+
+      <p class="para">Взыскание считаю необходимым для обеспечения дисциплины и порядка.</p>
+
+      <div class="appendix" id="appendixRow">
+        <b>Приложение:</b> 1. Видеозапись с нагрудной камеры (боди-камера):
+        <input class="f link" id="bodycam" data-fit placeholder="вставь ссылку на YouTube">
+      </div>
+
+      <div class="sign">
+        <div class="sign-left">
+          <input class="f req" id="fromPos" data-fit placeholder="должность" list="positions" autocomplete="off">
+          <div id="unitLine"></div>
+          <input class="f req" id="fromRank" data-fit placeholder="звание" list="ranks" autocomplete="off">
+        </div>
+        <div class="sign-mid">
+          <img id="stamp" alt="">
+          <div class="autograph" id="autograph"><span id="autoText"></span><svg id="autoFlourish" viewBox="0 0 240 100"><path id="autoPath" d=""/></svg></div>
+        </div>
+        <div class="sign-right">
+          <input class="f req" id="fromName" data-fit placeholder="Имя Фамилия">
+          <div class="sign-hint">подпись появится сама</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <h2>Как подать</h2>
+    <ol>
+      <li>Заполни подсвеченные поля прямо на бланке. Твои звание, должность и имя запомнятся.</li>
+      <li>Вставь ссылку на запись с боди-камеры в «Приложение».</li>
+      <li>Нажми «Отправить»: бланк с подписью и печатью улетит в Discord и пингнёт руководство.</li>
+    </ol>
+    <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
+    <button class="btn primary" id="send">Отправить рапорт</button>
+    <button class="btn" id="download">Скачать PNG</button>
+    <button class="btn ghost" id="clear">Очистить нарушение</button>
+    <div class="status" id="status"></div>
+    <div class="note">Рапорта на взыскания подаются в обязательном порядке всеми, от стажёра до инструктора батальона ВП включительно, и рассматриваются только СС ВП. Рапорта на нарушения старшего состава подаёт младший состав, их рассматривают комендант и полковник (и выше).</div>
+  </aside>
+</main>
+
+<datalist id="ranks">
+  <option>Рядовой</option><option>Ефрейтор</option><option>Младший сержант</option><option>Сержант</option>
+  <option>Старший сержант</option><option>Старшина</option><option>Прапорщик</option><option>Старший прапорщик</option>
+  <option>Младший лейтенант</option><option>Лейтенант</option><option>Старший лейтенант</option><option>Капитан</option>
+  <option>Майор</option><option>Подполковник</option><option>Полковник</option><option>Генерал-майор</option>
+</datalist>
+<datalist id="positions">
+  <option>Стажёр</option><option>Инспектор</option><option>Старший инспектор</option><option>Инструктор</option>
+  <option>Заместитель коменданта</option><option>Комендант</option>
+</datalist>
+
+<script src="config.js"></script>
+<script src="html2canvas.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
