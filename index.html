@@ -24,11 +24,6 @@
       <div class="emblem"><img src="emblem.png" alt=""></div>
       <div class="hdr" id="hdr"></div>
 
-      <div class="addressee">
-        <div id="addr"></div>
-        <div class="addr-from">от <span id="addrFrom">________________</span></div>
-      </div>
-
       <h1 class="title">Р А П О Р Т</h1>
       <div class="subtitle">О совершении дисциплинарного проступка</div>
       <div class="meta">
@@ -49,23 +44,23 @@
           <textarea class="f req" id="what" rows="2" placeholder="когда, где, обстоятельства, действия нарушителя"></textarea></li>
         <li><b>Нарушенные нормы:</b>
           <textarea class="f req" id="norms" rows="1" placeholder="что нарушено, со ссылкой на статьи/пункты устава"></textarea></li>
-        <li><b>Доказательства:</b>
-          <textarea class="f" id="proof" rows="1" placeholder="видео / фото / рапорты / иные материалы"></textarea></li>
         <li><b>Облегчающие/отягчающие факторы:</b>
           <textarea class="f" id="factors" rows="1" placeholder="например: продолжил после предупреждения; полное раскаяние; малозначительность"></textarea></li>
       </ol>
 
       <p class="para">Взыскание считаю необходимым для обеспечения дисциплины и порядка.</p>
 
-      <div class="appendix" id="appendixRow">
-        <b>Приложение:</b> 1. Видеозапись с нагрудной камеры (боди-камера):
-        <input class="f link" id="bodycam" data-fit placeholder="вставь ссылку на YouTube">
+      <div class="appendix">
+        <b>Приложение:</b>
+        <div class="app-row" id="appendixRow">1. Видеозапись с нагрудной камеры (боди-камера):
+          <input class="f link" id="bodycam" data-fit placeholder="вставь ссылку на YouTube"></div>
+        <div class="app-row" id="appendixRow2"><span id="app2num">2.</span>
+          <textarea class="f inline" id="proof" rows="1" placeholder="иные материалы: фото, рапорты, показания (необязательно)"></textarea></div>
       </div>
 
       <div class="sign">
         <div class="sign-left">
           <input class="f req" id="fromPos" data-fit placeholder="должность" list="positions" autocomplete="off">
-          <div id="unitLine"></div>
           <input class="f req" id="fromRank" data-fit placeholder="звание" list="ranks" autocomplete="off">
         </div>
         <div class="sign-mid">
@@ -84,7 +79,7 @@
     <h2>Как подать</h2>
     <ol>
       <li>Заполни подсвеченные поля прямо на бланке. Твои звание, должность и имя запомнятся.</li>
-      <li>Вставь ссылку на запись с боди-камеры в «Приложение».</li>
+      <li>Вставь ссылку на запись с боди-камеры в «Приложение», остальные материалы можно дописать ниже.</li>
       <li>Нажми «Отправить»: бланк с подписью и печатью улетит в Discord и пингнёт руководство.</li>
     </ol>
     <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
@@ -100,11 +95,10 @@
   <option>Рядовой</option><option>Ефрейтор</option><option>Младший сержант</option><option>Сержант</option>
   <option>Старший сержант</option><option>Старшина</option><option>Прапорщик</option><option>Старший прапорщик</option>
   <option>Младший лейтенант</option><option>Лейтенант</option><option>Старший лейтенант</option><option>Капитан</option>
-  <option>Майор</option><option>Подполковник</option><option>Полковник</option><option>Генерал-майор</option>
+  <option>Майор</option><option>Подполковник</option><option>Полковник</option><option>Генерал-майор</option><option>Генерал-лейтенант</option><option>Генерал-полковник</option><option>Генерал армии</option>
 </datalist>
 <datalist id="positions">
-  <option>Стажёр</option><option>Инспектор</option><option>Старший инспектор</option><option>Инструктор</option>
-  <option>Заместитель коменданта</option><option>Комендант</option>
+  <option>Стажёр ВП</option><option>Инспектор ВП</option><option>Дознаватель ВП</option><option>Инструктор ВП</option><option>Зам. Ком. Бат ВП</option><option>Ком. Бат ВП</option><option>Инспектор военной комендатуры</option><option>Дознаватель военной комендатуры</option><option>Заместитель коменданта гарнизона</option><option>Комендант гарнизона</option>
 </datalist>
 
 <script src="config.js"></script>

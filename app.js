@@ -7,9 +7,7 @@
 
   // ---------- шапка и значения по умолчанию ----------
   $("hdr").innerHTML = (C.header||[]).map(esc).join("<br>");
-  $("addr").innerHTML = (C.addressee||[]).map(esc).join("<br>");
   $("city").textContent = C.city || "Москва";
-  $("unitLine").textContent = C.unit || "Военной полиции";
   const now = new Date();
   $("date").value = `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()} г.`;
   $("num").value = `ВП-${pad(now.getDate())}${pad(now.getMonth()+1)}/${100+Math.floor(Math.random()*900)}`;
@@ -67,7 +65,6 @@
     return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 10000) / 10000; };
   }
   function updateSignature(){
-    $("addrFrom").textContent = addrFromText();
     const n = parseName($("fromName").value);
     const t = $("autoText"), path = $("autoPath");
     const hint = document.querySelector(".sign-hint");
@@ -164,9 +161,13 @@
         p.querySelectorAll("textarea.f").forEach(el => {
           const d = doc.createElement("div");
           d.style.whiteSpace = "pre-wrap"; d.style.textAlign = "justify";
-          d.textContent = el.value.trim() || "—"; el.replaceWith(d);
+          const tv = el.value.trim(); d.textContent = el.id === "proof" ? cap(tv) : (tv || "—"); el.replaceWith(d);
         });
-        if (!$("bodycam").value.trim()) doc.getElementById("appendixRow").remove();
+        const hasBc = !!$("bodycam").value.trim(), hasPr = !!$("proof").value.trim();
+        if (!hasBc) doc.getElementById("appendixRow").remove();
+        if (!hasPr) doc.getElementById("appendixRow2").remove();
+        else if (!hasBc) doc.getElementById("app2num").textContent = "1.";
+        if (!hasBc && !hasPr) p.querySelector(".appendix").remove();
         if (!$("stampOn").checked) doc.getElementById("stamp").remove();
       }
     });
