@@ -34,7 +34,7 @@
       </div>
       <div class="rule"></div>
 
-      <p class="para">В связи с совершением дисциплинарного проступка, предусмотренного пунктом 11 части 2 главы 5 Внутреннего устава 1-й Мотострелковой бригады Вооруженных сил Российской Федерации, <b>ПРИКАЗЫВАЮ:</b></p>
+      <p class="para">В связи с совершением дисциплинарного проступка, предусмотренного пунктом <span class="calc" id="normPoint">___</span> части <span class="calc" id="normPart">___</span> главы <span class="calc" id="normChapter">___</span> Дисциплинарного устава, <b>ПРИКАЗЫВАЮ:</b></p>
 
       <ol class="items">
         <li>Выдать дисциплинарное взыскание в виде <span id="kindWord">выговора</span> <span class="calc" id="rankShow">________</span> <span class="calc" id="nameShow">________</span> с номером паспорта <span class="calc" id="passShow">______</span>.</li>
@@ -67,6 +67,12 @@
       <button type="button" data-kind="pred">Предупреждение</button>
       <button type="button" data-kind="vyg" class="on">Выговор</button>
     </div>
+    <div class="norm-row">
+      <label class="plab">Пункт<input id="nPoint" inputmode="numeric" placeholder="11"></label>
+      <label class="plab">Часть<input id="nPart" inputmode="numeric" placeholder="2"></label>
+      <label class="plab">Глава<input id="nChapter" inputmode="numeric" placeholder="5"></label>
+    </div>
+    <div class="norm-hint">Пункт Дисциплинарного устава. Шапка приказа собирается из этих трёх полей.</div>
     <label class="plab">Подразделение
       <select id="unit"></select>
     </label>

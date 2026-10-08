@@ -153,3 +153,7 @@ textarea.f{display:block;width:100%;resize:none;overflow:hidden;line-height:1.5;
 .hist.repeat{background:#3a2218;color:#ffd7c2;border:1px solid #a85a32}
 .hist ol{margin:4px 0 0;padding-left:18px}
 .hist b{color:#fff}
+
+.norm-row{display:flex;gap:6px}
+.norm-row .plab{flex:1;margin-top:0}
+.norm-hint{font-size:12px;opacity:.65;margin:4px 0 8px;line-height:1.35}

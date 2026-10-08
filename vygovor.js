@@ -57,6 +57,7 @@
     refill();
   }));
   $("unit").addEventListener("change", () => { persist(); refill(); });
+  ["nPoint","nPart","nChapter"].forEach(id => $(id).addEventListener("input", () => { $(id).classList.remove("bad"); refill(); }));
   $("kind").addEventListener("click", e => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -149,6 +150,9 @@
     $("rankShow").textContent = rankDat($("tRank").value) || "________";
     $("nameShow").textContent = $("tName").value.trim() || "________";
     $("passShow").textContent = $("tPass").value.trim() || "______";
+    $("normPoint").textContent = $("nPoint").value.trim() || "___";
+    $("normPart").textContent = $("nPart").value.trim() || "___";
+    $("normChapter").textContent = $("nChapter").value.trim() || "___";
     const list = items();
     const html = list.map(esc).map(t => `<li>${t}</li>`).join("");
     $("workList").innerHTML = html;
@@ -229,7 +233,7 @@
 
   function validate(){
     let ok = true, first = null;
-    ["tRank","tName","tPass","fromPos","fromRank","fromName"].forEach(id => {
+    ["tRank","tName","tPass","fromPos","fromRank","fromName","nPoint","nPart","nChapter"].forEach(id => {
       const el = $(id);
       if (!el.value.trim()){ el.classList.add("bad"); ok = false; first = first || el; }
     });
@@ -268,6 +272,7 @@
       `**Подразделение:** ${u ? u.name : ""}`,
       `**Кому:** ${$("tRank").value.trim()} ${$("tName").value.trim()} | паспорт ${$("tPass").value.trim()}`,
       `**От:** ${$("fromPos").value.trim()}, ${$("fromRank").value.trim()} ${$("fromName").value.trim()}`,
+      `**Норма:** пункт ${$("nPoint").value.trim()} части ${$("nPart").value.trim()} главы ${$("nChapter").value.trim()} Дисциплинарного устава`,
       `**Отработка:** ${items().join("; ")}`
     ];
     return {
