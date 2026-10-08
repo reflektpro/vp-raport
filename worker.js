@@ -237,10 +237,13 @@ async function adminRoute(req, env, url, json, fail, cors) {
       const id = Number(b && b.id);
       if (!id) return fail("Нет записи", 400);
       const kind = b.kind === "pred" ? "pred" : "vyg";
+      const re = await wantNum(env, "orders", ORDER_PREFIX, kind, id, b.num);
+      if (re.error) return fail(re.error, re.status);
       await env.DB.prepare(
-        "UPDATE orders SET kind = ?, passport = ?, name = ?, rank = ?, unit_name = ?, issued = ?, reason = ? WHERE id = ?"
-      ).bind(kind, digits(b.passport), clip(b.name, 80), clip(b.rank, 40), clip(b.unit, 160), clip(b.issued, 40), clip(b.reason, 160), id).run();
-      return json({ ok: true });
+        "UPDATE orders SET kind = ?, passport = ?, name = ?, rank = ?, unit_name = ?, issued = ?, reason = ?, num = COALESCE(?, num) WHERE id = ?"
+      ).bind(kind, digits(b.passport), clip(b.name, 80), clip(b.rank, 40), clip(b.unit, 160), clip(b.issued, 40), clip(b.reason, 160), re.num, id).run();
+      const row = await env.DB.prepare("SELECT num FROM orders WHERE id = ?").bind(id).first();
+      return json({ ok: true, num: fixNum((row && row.num) || "") });
     }
     if (path === "/admin/orders" && req.method === "DELETE") {
       const id = Number(url.searchParams.get("id"));
@@ -263,6 +266,62 @@ async function adminRoute(req, env, url, json, fail, cors) {
         await env.DB.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('orders', ?)").bind(next - 1).run();
       }
       return json({ ok: true, next });
+    }
+    if (path === "/admin/papers" && req.method === "GET") {
+      await ensure(env);
+      const kind = PAPER_KINDS.includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "";
+      const q = clip(url.searchParams.get("q"), 80);
+      const rows = await env.DB.prepare(
+        "SELECT id, kind, num, name, passport, rank, note, discord_id, discord_name, created, edited FROM papers" +
+        " WHERE (?1 = '' OR kind = ?1) AND (?2 = '' OR name LIKE ?3 OR num LIKE ?3 OR discord_name LIKE ?3 OR (?4 <> '' AND passport = ?4))" +
+        " ORDER BY id DESC LIMIT 300"
+      ).bind(kind, q, "%" + q + "%", digits(q)).all();
+      return json({ papers: (rows.results || []).map(p => ({ ...p, num: fixNum(p.num) })) });
+    }
+    if (path === "/admin/papers" && req.method === "PATCH") {
+      await ensure(env);
+      const b = await readBody(req);
+      const id = Number(b && b.id);
+      if (!id) return fail("Нет записи", 400);
+      const cur = await env.DB.prepare("SELECT kind FROM papers WHERE id = ?").bind(id).first();
+      if (!cur) return fail("Нет записи", 404);
+      const re = await wantNum(env, "papers", PAPER_PREFIX, String(cur.kind || ""), id, b.num);
+      if (re.error) return fail(re.error, re.status);
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        "UPDATE papers SET name = ?, passport = ?, rank = ?, note = ?, edited = ?, num = COALESCE(?, num) WHERE id = ?"
+      ).bind(clip(b.name, 80), digits(b.passport).slice(0, 20), clip(b.rank, 40), clip(b.note, 300), now, re.num, id).run();
+      const row = await env.DB.prepare("SELECT num FROM papers WHERE id = ?").bind(id).first();
+      return json({ ok: true, num: fixNum((row && row.num) || "") });
+    }
+    if (path === "/admin/papers" && req.method === "DELETE") {
+      await ensure(env);
+      const id = Number(url.searchParams.get("id"));
+      if (!id) return fail("Нет записи", 400);
+      await env.DB.prepare("DELETE FROM papers WHERE id = ?").bind(id).run();
+      return json({ ok: true });
+    }
+    if (path === "/admin/paper-seq" && req.method === "GET") {
+      await ensure(env);
+      const out = {};
+      for (const k of PAPER_KINDS) {
+        const c = await env.DB.prepare("SELECT n FROM counters WHERE kind = ?").bind(k).first();
+        const last = Number((c && c.n) || 0);
+        out[k] = { last, next: last + 1 };
+      }
+      return json(out);
+    }
+    if (path === "/admin/paper-seq" && req.method === "POST") {
+      await ensure(env);
+      const b = await readBody(req);
+      const kind = b && PAPER_KINDS.includes(b.kind) ? b.kind : "";
+      if (!kind) return fail("Не тот вид", 400);
+      const next = Number(b.next);
+      if (!Number.isInteger(next) || next < 1 || next > 9999) return fail("Номер от 1 до 9999", 400);
+      await env.DB.prepare(
+        "INSERT INTO counters (kind, n) VALUES (?1, ?2) ON CONFLICT(kind) DO UPDATE SET n = excluded.n"
+      ).bind(kind, next - 1).run();
+      return json({ ok: true, kind, next });
     }
     if (path === "/admin/audit" && req.method === "GET") {
       await ensure(env);
@@ -322,13 +381,41 @@ async function ensure(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS bans (discord_id TEXT PRIMARY KEY, username TEXT, created INTEGER)").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, discord_id TEXT, discord_name TEXT, action TEXT, kind TEXT, num TEXT, ip TEXT)").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS send_log (ip TEXT, ts INTEGER)").run();
+  await addColumn(env, "ALTER TABLE send_log ADD COLUMN discord_id TEXT");
+  await addColumn(env, "ALTER TABLE papers ADD COLUMN rank TEXT");
+  await addColumn(env, "ALTER TABLE papers ADD COLUMN note TEXT");
+  await addColumn(env, "ALTER TABLE papers ADD COLUMN edited INTEGER");
+  schemaReady = true;
+}
+async function addColumn(env, sql) {
   try {
-    await env.DB.prepare("ALTER TABLE send_log ADD COLUMN discord_id TEXT").run();
+    await env.DB.prepare(sql).run();
   } catch (e) {
     const m = String((e && e.message) || e);
     if (!/duplicate column/i.test(m)) throw e;
   }
-  schemaReady = true;
+}
+// Префиксы номеров собираются в SQLite через char(): в исходнике нет кириллицы.
+// ? — вид документа, по нему выбирается префикс.
+const PAPER_KINDS = ["raport", "promo", "week"];
+const PAPER_PREFIX = "(CASE ? WHEN 'raport' THEN char(1042,1055) WHEN 'promo' THEN char(1055,1042) WHEN 'week' THEN char(1054,1058) END)";
+const ORDER_PREFIX = "(CASE ? WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END)";
+// Новый номер одной записи, только если админ явно вписал цифры. Пусто — номер не трогаем.
+// Другие записи не перенумеровываются; занятый номер того же вида не даём.
+async function wantNum(env, table, prefix, kind, id, raw) {
+  const s = digits(raw == null ? "" : raw);
+  if (!s) return { num: null };
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < 1 || n > 99999) return { error: "Номер от 1 до 99999", status: 400 };
+  const row = await env.DB.prepare(
+    "SELECT " + prefix + " || '-' || printf('%04d', ?) AS want, num AS cur FROM " + table + " WHERE id = ?"
+  ).bind(kind, n, id).first();
+  if (!row) return { error: "Нет записи", status: 404 };
+  if (!row.want) return { error: "Не тот вид", status: 400 };
+  if (fixNum(row.cur) === fixNum(row.want)) return { num: null };
+  const dup = await env.DB.prepare("SELECT id FROM " + table + " WHERE id <> ? AND num = ?").bind(id, row.want).first();
+  if (dup) return { error: "Номер " + fixNum(row.want) + " уже занят", status: 409 };
+  return { num: row.want };
 }
 function authClient(env, cors) {
   return new Response(JSON.stringify({ clientId: env.DISCORD_CLIENT_ID || "" }), {
