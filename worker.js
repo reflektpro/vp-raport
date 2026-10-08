@@ -4,7 +4,7 @@ export default {
   async fetch(req, env) {
     const cors = {
       "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
-      "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Content-Type": "text/plain; charset=utf-8"
     };
@@ -18,8 +18,8 @@ export default {
 
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
-    if (path === "/rules" && req.method === "GET") return rulesGet(env, json, fail);
-    if (path.startsWith("/admin")) return adminRoute(req, env, url, json, fail);
+    if (path === "/rules" && req.method === "GET") return rulesGet(env, cors, fail);
+    if (path.startsWith("/admin")) return adminRoute(req, env, url, json, fail, cors);
 
     if (req.method === "GET") {
       const passport = digits(new URL(req.url).searchParams.get("passport") || "");
@@ -35,6 +35,7 @@ export default {
     if (ctype.includes("application/json")) {
       let body = {};
       try { body = await req.json(); } catch { return fail("Bad json", 400); }
+      if (!(await gateOk(env, body.gate))) return fail("Неверный пароль отправки", 403);
       const passport = digits(body.passport || "");
       if (passport.length < 3) return fail("Нужен номер паспорта", 400);
       const kind = body.kind === "pred" ? "pred" : "vyg";
@@ -53,10 +54,17 @@ export default {
     let parts;
     try { parts = await readParts(req); }
     catch { return fail("Bad form", 400); }
+    const gatePart = parts.find(p => p.name === "gate");
+    const gateVal = gatePart ? new TextDecoder().decode(gatePart.body) : "";
+    if (!(await gateOk(env, gateVal))) return fail("Неверный пароль отправки", 403);
+
     const file = parts.find(p => p.filename);
     const png = file && file.body[0] === 0x89 && file.body[1] === 0x50 && file.body[2] === 0x4e && file.body[3] === 0x47;
     if (!file || !png || file.body.length > 8 * 1024 * 1024)
       return fail("Картинка не принята: тип «" + ((file && file.type) || "пусто") + "», размер " + (file ? file.body.length : 0) + " байт", 400);
+
+    const limited = await rateLimit(req, env);
+    if (limited) return fail(limited, 429);
 
     let payload = {};
     try { payload = JSON.parse(new TextDecoder().decode((parts.find(p => p.name === "payload_json") || {}).body || new Uint8Array())); }
@@ -87,6 +95,7 @@ export default {
     out.append("files[0]", new Blob([file.body], { type: "image/png" }), "raport.png");
 
     const res = await fetch(env.WEBHOOK_URL + "?wait=true", { method: "POST", body: out });
+    if (res.ok) await rateLog(req, env);
     return new Response(res.ok ? "ok" : await res.text(), { status: res.ok ? 200 : 502, headers: cors });
   }
 };
@@ -99,6 +108,52 @@ function authed(req, env) {
   let n = 0;
   for (let i = 0; i < token.length; i++) n |= token.charCodeAt(i) ^ got.charCodeAt(i);
   return n === 0;
+}
+async function gateOk(env, supplied) {
+  const stored = await gateGet(env);
+  if (!stored) return false;
+  const got = String(supplied == null ? "" : supplied);
+  if (got.length !== stored.length) return false;
+  let n = 0;
+  for (let i = 0; i < stored.length; i++) n |= stored.charCodeAt(i) ^ got.charCodeAt(i);
+  return n === 0;
+}
+async function gateGet(env) {
+  await kvReady(env);
+  const row = await env.DB.prepare("SELECT v FROM kv WHERE k = ?").bind("gate").first();
+  if (!row || row.v == null || row.v === "") return null;
+  try {
+    const p = JSON.parse(row.v);
+    return typeof p === "string" && p.length ? p : null;
+  } catch {
+    const s = String(row.v);
+    return s.length ? s : null;
+  }
+}
+async function gatePut(env, password) {
+  await kvReady(env);
+  await env.DB.prepare(
+    "INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+  ).bind("gate", JSON.stringify(password)).run();
+}
+async function rateLimit(req, env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS send_log (ip TEXT, ts INTEGER)").run();
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare("DELETE FROM send_log WHERE ts < ?").bind(now - 3600).run();
+  const ip = req.headers.get("CF-Connecting-IP") || "0";
+  const mine = await env.DB.prepare(
+    "SELECT COUNT(*) AS c FROM send_log WHERE ip = ? AND ts >= ?"
+  ).bind(ip, now - 600).first();
+  const all = await env.DB.prepare(
+    "SELECT COUNT(*) AS c FROM send_log WHERE ts >= ?"
+  ).bind(now - 3600).first();
+  if ((mine && mine.c >= 8) || (all && all.c >= 40)) return "Слишком часто, подожди";
+  return null;
+}
+async function rateLog(req, env) {
+  const now = Math.floor(Date.now() / 1000);
+  const ip = req.headers.get("CF-Connecting-IP") || "0";
+  await env.DB.prepare("INSERT INTO send_log (ip, ts) VALUES (?, ?)").bind(ip, now).run();
 }
 async function kvReady(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)").run();
@@ -115,9 +170,17 @@ async function kvSet(env, key, value) {
   if (text.length > 80000) throw new Error("too big");
   await env.DB.prepare("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(key, text).run();
 }
-async function rulesGet(env, json, fail) {
+async function rulesGet(env, cors, fail) {
   try {
-    return json({ promo: await kvGet(env, "promo"), vygovor: await kvGet(env, "vygovor") });
+    const body = { promo: await kvGet(env, "promo"), vygovor: await kvGet(env, "vygovor") };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: {
+        ...cors,
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store"
+      }
+    });
   } catch (e) {
     return fail("База правил недоступна", 500);
   }
@@ -131,17 +194,28 @@ function vygOk(v) {
 async function readBody(req) {
   try { return await req.json(); } catch { return null; }
 }
-async function adminRoute(req, env, url, json, fail) {
+async function adminRoute(req, env, url, json, fail, cors) {
   if (!authed(req, env)) return fail("Неверный пароль", 401);
   const path = url.pathname.replace(/\/+$/, "");
   try {
-    if (path === "/admin/rules" && req.method === "GET") return rulesGet(env, json, fail);
+    if (path === "/admin/rules" && req.method === "GET") return rulesGet(env, cors, fail);
     if (path === "/admin/rules" && req.method === "PUT") {
       const body = await readBody(req);
       if (!body || !promoOk(body.promo) || !vygOk(body.vygovor)) return fail("Правила не приняты", 400);
       await kvSet(env, "promo", body.promo);
       await kvSet(env, "vygovor", body.vygovor);
       return json({ ok: true });
+    }
+    if (path === "/admin/gate" && req.method === "GET") {
+      const g = await gateGet(env);
+      return json({ set: !!(g && g.length) });
+    }
+    if (path === "/admin/gate" && req.method === "PUT") {
+      const body = await readBody(req);
+      const password = body && typeof body.password === "string" ? body.password : "";
+      if (password.length < 4 || password.length > 40) return fail("Пароль от 4 до 40 символов", 400);
+      await gatePut(env, password);
+      return json({ ok: true, set: true });
     }
     if (path === "/admin/orders" && req.method === "GET") {
       const passport = digits(url.searchParams.get("passport") || "");
@@ -156,8 +230,8 @@ async function adminRoute(req, env, url, json, fail) {
       if (!id) return fail("Нет записи", 400);
       const kind = b.kind === "pred" ? "pred" : "vyg";
       await env.DB.prepare(
-        "UPDATE orders SET num = ?, kind = ?, passport = ?, name = ?, rank = ?, unit_name = ?, issued = ?, reason = ? WHERE id = ?"
-      ).bind(clip(b.num, 20), kind, digits(b.passport), clip(b.name, 80), clip(b.rank, 40), clip(b.unit, 160), clip(b.issued, 40), clip(b.reason, 160), id).run();
+        "UPDATE orders SET kind = ?, passport = ?, name = ?, rank = ?, unit_name = ?, issued = ?, reason = ? WHERE id = ?"
+      ).bind(kind, digits(b.passport), clip(b.name, 80), clip(b.rank, 40), clip(b.unit, 160), clip(b.issued, 40), clip(b.reason, 160), id).run();
       return json({ ok: true });
     }
     if (path === "/admin/orders" && req.method === "DELETE") {

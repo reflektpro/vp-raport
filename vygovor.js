@@ -3,7 +3,7 @@
   const live = window.VP_RULES ? await window.VP_RULES : null;
   if (live && live.promo && Array.isArray(live.promo.acts)) window.PROMO = live.promo;
   if (live && live.vygovor && Array.isArray(live.vygovor.units)) window.VYG = live.vygovor;
-  const UNITS = (window.VYG && window.VYG.units) || [];
+  let UNITS = (window.VYG && window.VYG.units) || [];
   const $ = id => document.getElementById(id);
   const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   const RANK_DAT = {
@@ -43,6 +43,7 @@
   }
   document.querySelectorAll("input[data-fit]").forEach(el => { fit(el); el.addEventListener("input", () => fit(el)); });
   $("num").value = "";
+  $("num").readOnly = true;
   fit($("num"));
   document.fonts && document.fonts.ready.then(() => {
     document.querySelectorAll("input[data-fit]").forEach(fit);
@@ -143,11 +144,14 @@
         rank: $("tRank").value.trim(),
         unit: u ? u.name : "",
         issued: $("date").value.trim(),
-        reason: points().join(", ")
+        reason: points().join(", "),
+        gate: sessionStorage.getItem("vp_gate") || ""
       })
     });
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
+    const errText = await res.text();
+    if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+    if (!res.ok) throw new Error(errText);
+    const data = JSON.parse(errText);
     if (!data.num) throw new Error("База не выдала номер");
     state.reserved = { key, num: data.num };
     $("num").value = data.num;
@@ -298,9 +302,11 @@
     const roles = (C.roles||[]).filter(Boolean);
     const u = unit();
     const kind = state.kind === "pred" ? "Предупреждение" : "Выговор";
+    const num = (state.reserved && state.reserved.num) || $("num").value.trim();
     const lines = [
       roles.map(r => `<@&${r}>`).join(" "),
-      `📋 **ПРИКАЗ №${$("num").value.trim()}** о вынесении дисциплинарного взыскания`,
+      "Приказ № " + num,
+      `📋 **ПРИКАЗ №${num}** о вынесении дисциплинарного взыскания`,
       `**Вид:** ${kind}`,
       `**Подразделение:** ${u ? u.name : ""}`,
       `**Кому:** ${$("tRank").value.trim()} ${$("tName").value.trim()} | паспорт ${$("tPass").value.trim()}`,
@@ -328,9 +334,12 @@
       fd.append("payload_json", JSON.stringify(buildPayload()));
       if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
       fd.append("files[0]", new File([blob], "prikaz.png", { type: "image/png" }));
+      fd.append("gate", sessionStorage.getItem("vp_gate") || "");
       status("Отправляю в Discord…");
       const res = await fetch(target, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+      const errText = await res.text();
+      if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+      if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Приказ №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
       state.reserved = null;
       $("num").value = "";
@@ -362,6 +371,25 @@
     $("hist").className = "hist";
     $("hist").innerHTML = "";
     refill(); status("");
+  });
+
+  const gateEl = $("gate");
+  if (gateEl) {
+    gateEl.value = sessionStorage.getItem("vp_gate") || "";
+    gateEl.addEventListener("input", () => sessionStorage.setItem("vp_gate", gateEl.value));
+  }
+
+  window.addEventListener("vp-rules", () => {
+    UNITS = (window.VYG && window.VYG.units) || [];
+    const cur = $("unit").value;
+    $("unit").innerHTML = "";
+    UNITS.forEach(u => {
+      const o = document.createElement("option");
+      o.value = u.id; o.textContent = u.name;
+      $("unit").appendChild(o);
+    });
+    if (UNITS.some(u => u.id === cur)) $("unit").value = cur;
+    refill();
   });
 
   window.__vp = { renderPNG, buildPayload, state, items };

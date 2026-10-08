@@ -200,9 +200,12 @@
       fd.append("payload_json", JSON.stringify(buildPayload()));
       if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
       fd.append("files[0]", new File([blob], "raport.png", { type: "image/png" }));
+      fd.append("gate", sessionStorage.getItem("vp_gate") || "");
       status("Отправляю в Discord…");
       const res = await fetch(target, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+      const errText = await res.text();
+      if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+      if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Рапорт №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
       $("num").value = `ВП-${pad(now.getDate())}${pad(now.getMonth()+1)}/${100+Math.floor(Math.random()*900)}`; fit($("num"));
     } catch (e) {
@@ -227,6 +230,12 @@
     document.querySelectorAll("textarea.f").forEach(grow);
     status("");
   });
+
+  const gateEl = $("gate");
+  if (gateEl) {
+    gateEl.value = sessionStorage.getItem("vp_gate") || "";
+    gateEl.addEventListener("input", () => sessionStorage.setItem("vp_gate", gateEl.value));
+  }
 
   // для автотеста
   window.__vp = { renderPNG, buildPayload, validate };

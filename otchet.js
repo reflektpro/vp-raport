@@ -7,13 +7,17 @@
   const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   const SAVED = ["fromPos","fromRank","fromName","staticId"];
   const RANK_INS = {"рядовой":"рядового","ефрейтор":"ефрейтора","младший сержант":"младшего сержанта","сержант":"сержанта","старший сержант":"старшего сержанта","старшина":"старшины","прапорщик":"прапорщика","старший прапорщик":"старшего прапорщика","младший лейтенант":"младшего лейтенанта","лейтенант":"лейтенанта","старший лейтенант":"старшего лейтенанта","капитан":"капитана","майор":"майора","подполковник":"подполковника","полковник":"полковника","генерал-майор":"генерал-майора","генерал-лейтенант":"генерал-лейтенанта","генерал-полковник":"генерал-полковника","генерал армии":"генерала армии"};
-  const P = window.PROMO;
-  const CATS = [];
-  P.acts.forEach(a => {
-    CATS.push(a);
-    if (a.key === "vzysk") CATS.push({ key:"vygovor", name:"Выговор, не из рапорта выше", pts:0, doc:"Выговоров, не вошедших в рапорты на взыскание", sub:true });
-  });
-  CATS.push({ key:"proc", name:"Передача процессуальных действий", pts:0, doc:"Передано процессуальных действий" });
+  let P = window.PROMO;
+  let CATS = [];
+  function buildCats(){
+    CATS = [];
+    P.acts.forEach(a => {
+      CATS.push(a);
+      if (a.key === "vzysk") CATS.push({ key:"vygovor", name:"Выговор, не из рапорта выше", pts:0, doc:"Выговоров, не вошедших в рапорты на взыскание", sub:true });
+    });
+    CATS.push({ key:"proc", name:"Передача процессуальных действий", pts:0, doc:"Передано процессуальных действий" });
+  }
+  buildCats();
 
   $("hdr").innerHTML = (C.header||[]).map(esc).join("<br>");
   $("city").textContent = C.city || "Москва";
@@ -127,11 +131,24 @@
   const linksOf = k => (st(k).links || "").split(/\s+/).map(s => s.trim()).filter(s => LINK.test(s));
 
   const box = $("acts");
-  CATS.forEach(c => {
-    const row = document.createElement("div");
-    row.className = "act" + (c.sub ? " sub" : "");
-    row.dataset.key = c.key;
-    row.innerHTML = `
+  let group = null;
+  function syncWeekFromDom(){
+    box.querySelectorAll(".act").forEach(row => {
+      const key = row.dataset.key, s = st(key);
+      const nIn = row.querySelector("[data-n]"), once = row.querySelector("[data-once]"), ta = row.querySelector("textarea");
+      if (nIn) s.n = Math.max(0, Number(nIn.value) || 0);
+      if (once) s.n = once.checked ? 1 : 0;
+      if (ta) s.links = ta.value;
+    });
+    save();
+  }
+  function fillWeekActs(){
+    box.innerHTML = "";
+    CATS.forEach(c => {
+      const row = document.createElement("div");
+      row.className = "act" + (c.sub ? " sub" : "");
+      row.dataset.key = c.key;
+      row.innerHTML = `
       <div class="act-top">
         <div class="act-name">${esc(c.name)}${c.pts ? `<span class="pts">+${c.pts}</span>` : ""}</div>
         ${c.once
@@ -139,13 +156,22 @@
           : `<div class="ctr"><button data-d="-1">−</button><input type="number" min="0" value="${st(c.key).n}" data-n><button data-d="1">+</button></div>`}
       </div>
       <details><summary>ссылки (<span data-lc>0</span>)</summary><textarea rows="2" placeholder="по одной ссылке на строку"></textarea></details>`;
-    row.querySelector("textarea").value = st(c.key).links;
-    box.appendChild(row);
+      row.querySelector("textarea").value = st(c.key).links;
+      box.appendChild(row);
+    });
+    const vz = box.querySelector('[data-key="vzysk"]'), vg = box.querySelector('[data-key="vygovor"]');
+    group = document.createElement("div"); group.className = "cat-group";
+    if (vz && vg) { vz.before(group); group.append(vz, vg); }
+  }
+  fillWeekActs();
+  window.addEventListener("vp-rules", () => {
+    syncWeekFromDom();
+    P = window.PROMO;
+    if (!P || !Array.isArray(P.acts)) return;
+    buildCats();
+    fillWeekActs();
+    refill();
   });
-  // выговоры визуально прижаты к взысканиям
-  const vz = box.querySelector('[data-key="vzysk"]'), vg = box.querySelector('[data-key="vygovor"]');
-  const group = document.createElement("div"); group.className = "cat-group";
-  vz.before(group); group.append(vz, vg);
 
   box.addEventListener("click", e => {
     const b = e.target.closest("button[data-d]"); if (!b) return;
@@ -201,7 +227,7 @@
       row.classList.toggle("done", s.n > 0);
       row.querySelector("[data-lc]").textContent = linksOf(row.dataset.key).length;
     });
-    group.classList.toggle("on", st("vzysk").n > 0 || st("vygovor").n > 0);
+    if (group) group.classList.toggle("on", st("vzysk").n > 0 || st("vygovor").n > 0);
     $("vygNote").classList.toggle("ok", !bothCounted());
   }
 
@@ -277,9 +303,12 @@
       const fd = new FormData();
       fd.append("payload_json", JSON.stringify(buildPayload()));
       fd.append("files[0]", new File([blob], "raport.png", { type: "image/png" }));
+      fd.append("gate", sessionStorage.getItem("vp_gate") || "");
       status("Отправляю в Discord…");
       const res = await fetch(target, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+      const errText = await res.text();
+      if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+      if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Отчёт №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
       $("num").value = newNum(); fit($("num"));
     } catch (e) { status("Не отправилось: " + e.message, "err"); } finally { busy(false); }
@@ -297,6 +326,12 @@
     if (!confirm("Обнулить всё, что отмечено за эту неделю?")) return;
     Object.keys(state).forEach(k => delete state[k]); save(); location.reload();
   });
+
+  const gateEl = $("gate");
+  if (gateEl) {
+    gateEl.value = sessionStorage.getItem("vp_gate") || "";
+    gateEl.addEventListener("input", () => sessionStorage.setItem("vp_gate", gateEl.value));
+  }
 
   refill();
   window.__vp = { buildPayload, renderPNG, state, done };

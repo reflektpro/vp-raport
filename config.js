@@ -29,11 +29,38 @@ window.VP_RULES = (async () => {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
-    const res = await fetch(String(C.endpoint).replace(/\/$/, "") + "/rules", { signal: ctrl.signal });
+    const res = await fetch(String(C.endpoint).replace(/\/$/, "") + "/rules", { cache: "no-store", signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
     return null;
   }
+})();
+
+(function () {
+  const C = window.VP_CONFIG;
+  if (!C || !C.endpoint) return;
+  let last = "";
+  const url = String(C.endpoint).replace(/\/$/, "") + "/rules";
+  async function tick() {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 4000);
+      const res = await fetch(url, { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return;
+      const data = await res.json();
+      const text = JSON.stringify(data);
+      if (!last) { last = text; return; }
+      if (text === last) return;
+      if (!data || !(data.promo || data.vygovor)) return;
+      last = text;
+      if (data.promo && Array.isArray(data.promo.acts)) window.PROMO = data.promo;
+      if (data.vygovor && Array.isArray(data.vygovor.units)) window.VYG = data.vygovor;
+      window.VP_RULES = Promise.resolve(data);
+      window.dispatchEvent(new Event("vp-rules"));
+    } catch (e) {}
+  }
+  setInterval(tick, 5000);
 })();

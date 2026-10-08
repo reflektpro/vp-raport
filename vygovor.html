@@ -30,7 +30,7 @@
       <div class="meta">
         <input class="f" id="date" data-fit>
         <span id="city"></span>
-        <span>№<input class="f" id="num" data-fit placeholder="по порядку"></span>
+        <span>№<input class="f" id="num" data-fit placeholder="по порядку" readonly></span>
       </div>
       <div class="rule"></div>
 
@@ -87,6 +87,9 @@
     <h3 class="duty-h">Отработка, все пункты</h3>
     <ol class="duty-preview" id="dutyPreview"></ol>
     <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
+    <label class="plab">Пароль отправки
+      <input id="gate" type="password" autocomplete="off">
+    </label>
     <button class="btn primary" id="send">Отправить приказ</button>
     <button class="btn" id="download">Скачать PNG</button>
     <button class="btn ghost" id="clear">Очистить нарушителя</button>

@@ -3,7 +3,7 @@
   const live = window.VP_RULES ? await window.VP_RULES : null;
   if (live && live.promo && Array.isArray(live.promo.acts)) window.PROMO = live.promo;
   if (live && live.vygovor && Array.isArray(live.vygovor.units)) window.VYG = live.vygovor;
-  const P = window.PROMO;
+  let P = window.PROMO;
   const $ = id => document.getElementById(id);
   const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   const SAVED = ["fromPos","fromRank","fromName"];
@@ -134,7 +134,18 @@
 
   // строим список видов работы в панели
   const actsBox = $("acts");
-  P.acts.forEach(a => {
+  function syncActsFromDom(){
+    actsBox.querySelectorAll(".act").forEach(row => {
+      const k = row.dataset.key;
+      const s = st(k);
+      const nIn = row.querySelector("[data-n]"), once = row.querySelector("[data-once]"), ta = row.querySelector("[data-links]");
+      if (nIn) s.n = Math.max(0, parseInt(nIn.value) || 0);
+      if (once) s.n = once.checked ? 1 : 0;
+      if (ta) s.links = ta.value;
+    });
+    save();
+  }
+  function addActRow(a){
     const row = document.createElement("div"); row.className = "act"; row.dataset.key = a.key;
     row.innerHTML = `
       <div class="act-top">
@@ -160,6 +171,18 @@
       if (a.once && lc && !s.n) { s.n = 1; once.checked = true; }
       recalc();
     });
+  }
+  function fillActs(){
+    actsBox.innerHTML = "";
+    P.acts.forEach(addActRow);
+  }
+  fillActs();
+  window.addEventListener("vp-rules", () => {
+    syncActsFromDom();
+    P = window.PROMO;
+    if (!P || !Array.isArray(P.acts)) return;
+    fillActs();
+    recalc();
   });
 
   function compute(){
@@ -319,9 +342,12 @@
       fd.append("payload_json", JSON.stringify(buildPayload(r)));
       if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
       fd.append("files[0]", new File([blob], "raport.png", { type: "image/png" }));
+      fd.append("gate", sessionStorage.getItem("vp_gate") || "");
       status("Отправляю в Discord…");
       const res = await fetch(target, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+      const errText = await res.text();
+      if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+      if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Рапорт №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
       $("num").value = newNum(); fit($("num"));
     } catch (e) { status("Не отправилось: " + e.message, "err"); } finally { busy(false); }
@@ -339,6 +365,12 @@
     if (!confirm("Обнулить все отмеченные достижения и ссылки?")) return;
     Object.keys(state).forEach(k => delete state[k]); save(); location.reload();
   });
+
+  const gateEl = $("gate");
+  if (gateEl) {
+    gateEl.value = sessionStorage.getItem("vp_gate") || "";
+    gateEl.addEventListener("input", () => sessionStorage.setItem("vp_gate", gateEl.value));
+  }
 
   window.__vp = { compute, buildPayload, renderPNG, state };
   function busy(b){ ["send","download"].forEach(id => $(id).disabled = b); }
