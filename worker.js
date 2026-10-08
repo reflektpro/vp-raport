@@ -1,5 +1,6 @@
-// Cloudflare Worker: рапорт в Discord и журнал приказов в D1.
-// Секреты: WEBHOOK_URL, ROLE_IDS, ALLOWED_ORIGIN. База: DB (D1 vp-prikazy).
+// Cloudflare Worker: рапорт в Discord, номера бланков и журнал приказов в D1.
+// Секреты (не в git): WEBHOOK_URL, ROLE_IDS, ALLOWED_ORIGIN, ADMIN_TOKEN, DISCORD_CLIENT_SECRET.
+// DISCORD_CLIENT_ID — открытый id приложения. База: DB (D1).
 export default {
   async fetch(req, env) {
     const cors = {
@@ -20,6 +21,9 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     if (path === "/rules" && req.method === "GET") return rulesGet(env, cors, fail);
     if (path.startsWith("/admin")) return adminRoute(req, env, url, json, fail, cors);
+    if (path === "/auth/client" && req.method === "GET") return authClient(env, cors);
+    if (path === "/auth/discord" && req.method === "POST") return authDiscord(req, env, json, fail);
+    if (path === "/paper" && req.method === "POST") return paperPost(req, env, json, fail);
 
     if (req.method === "GET") {
       const passport = digits(new URL(req.url).searchParams.get("passport") || "");
@@ -35,7 +39,8 @@ export default {
     if (ctype.includes("application/json")) {
       let body = {};
       try { body = await req.json(); } catch { return fail("Bad json", 400); }
-      if (!(await gateOk(env, body.gate))) return fail("Неверный пароль отправки", 403);
+      const who = await requireUser(req, env, fail);
+      if (who.error) return who.error;
       const passport = digits(body.passport || "");
       if (passport.length < 3) return fail("Нужен номер паспорта", 400);
       const kind = body.kind === "pred" ? "pred" : "vyg";
@@ -48,22 +53,22 @@ export default {
       ).bind(id).run();
       const row = await env.DB.prepare("SELECT num FROM orders WHERE id = ?").bind(id).first();
       const num = fixNum((row && row.num) || "");
+      await writeAudit(env, req, who.user, "order", kind, num);
       return json({ num, id });
     }
 
     let parts;
     try { parts = await readParts(req); }
     catch { return fail("Bad form", 400); }
-    const gatePart = parts.find(p => p.name === "gate");
-    const gateVal = gatePart ? new TextDecoder().decode(gatePart.body) : "";
-    if (!(await gateOk(env, gateVal))) return fail("Неверный пароль отправки", 403);
+    const who = await requireUser(req, env, fail);
+    if (who.error) return who.error;
 
     const file = parts.find(p => p.filename);
     const png = file && file.body[0] === 0x89 && file.body[1] === 0x50 && file.body[2] === 0x4e && file.body[3] === 0x47;
     if (!file || !png || file.body.length > 8 * 1024 * 1024)
       return fail("Картинка не принята: тип «" + ((file && file.type) || "пусто") + "», размер " + (file ? file.body.length : 0) + " байт", 400);
 
-    const limited = await rateLimit(req, env);
+    const limited = await rateLimit(req, env, who.user.id);
     if (limited) return fail(limited, 429);
 
     let payload = {};
@@ -95,7 +100,11 @@ export default {
     out.append("files[0]", new Blob([file.body], { type: "image/png" }), "raport.png");
 
     const res = await fetch(env.WEBHOOK_URL + "?wait=true", { method: "POST", body: out });
-    if (res.ok) await rateLog(req, env);
+    if (res.ok) {
+      await rateLog(req, env, who.user.id);
+      const meta = sendMeta(parts, content);
+      await writeAudit(env, req, who.user, "send", meta.kind, meta.num);
+    }
     return new Response(res.ok ? "ok" : await res.text(), { status: res.ok ? 200 : 502, headers: cors });
   }
 };
@@ -136,24 +145,23 @@ async function gatePut(env, password) {
     "INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
   ).bind("gate", JSON.stringify(password)).run();
 }
-async function rateLimit(req, env) {
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS send_log (ip TEXT, ts INTEGER)").run();
+async function rateLimit(req, env, discordId) {
+  await ensure(env);
   const now = Math.floor(Date.now() / 1000);
   await env.DB.prepare("DELETE FROM send_log WHERE ts < ?").bind(now - 3600).run();
-  const ip = req.headers.get("CF-Connecting-IP") || "0";
   const mine = await env.DB.prepare(
-    "SELECT COUNT(*) AS c FROM send_log WHERE ip = ? AND ts >= ?"
-  ).bind(ip, now - 600).first();
+    "SELECT COUNT(*) AS c FROM send_log WHERE discord_id = ? AND ts >= ?"
+  ).bind(discordId, now - 600).first();
   const all = await env.DB.prepare(
     "SELECT COUNT(*) AS c FROM send_log WHERE ts >= ?"
   ).bind(now - 3600).first();
   if ((mine && mine.c >= 8) || (all && all.c >= 40)) return "Слишком часто, подожди";
   return null;
 }
-async function rateLog(req, env) {
+async function rateLog(req, env, discordId) {
   const now = Math.floor(Date.now() / 1000);
   const ip = req.headers.get("CF-Connecting-IP") || "0";
-  await env.DB.prepare("INSERT INTO send_log (ip, ts) VALUES (?, ?)").bind(ip, now).run();
+  await env.DB.prepare("INSERT INTO send_log (ip, ts, discord_id) VALUES (?, ?, ?)").bind(ip, now, discordId).run();
 }
 async function kvReady(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)").run();
@@ -256,11 +264,189 @@ async function adminRoute(req, env, url, json, fail, cors) {
       }
       return json({ ok: true, next });
     }
+    if (path === "/admin/audit" && req.method === "GET") {
+      await ensure(env);
+      const rows = await env.DB.prepare(
+        "SELECT id, ts, discord_id, discord_name, action, kind, num, ip FROM audit ORDER BY id DESC LIMIT 200"
+      ).all();
+      return json({ rows: rows.results || [] });
+    }
+    if (path === "/admin/bans" && req.method === "GET") {
+      await ensure(env);
+      const rows = await env.DB.prepare(
+        "SELECT discord_id, username, created FROM bans ORDER BY created DESC"
+      ).all();
+      return json({ bans: rows.results || [] });
+    }
+    if (path === "/admin/ban" && req.method === "POST") {
+      await ensure(env);
+      const b = await readBody(req);
+      const discordId = String((b && (b.discordId || b.discord_id)) || "").replace(/\D/g, "");
+      if (!discordId) return fail("Нет Discord id", 400);
+      let username = "";
+      const s = await env.DB.prepare(
+        "SELECT username FROM sessions WHERE discord_id = ? ORDER BY created DESC LIMIT 1"
+      ).bind(discordId).first();
+      if (s && s.username) username = String(s.username);
+      else {
+        const a = await env.DB.prepare(
+          "SELECT discord_name FROM audit WHERE discord_id = ? ORDER BY id DESC LIMIT 1"
+        ).bind(discordId).first();
+        if (a && a.discord_name) username = String(a.discord_name);
+      }
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        "INSERT INTO bans (discord_id, username, created) VALUES (?, ?, ?) ON CONFLICT(discord_id) DO UPDATE SET username = excluded.username, created = excluded.created"
+      ).bind(discordId, clip(username, 80), now).run();
+      return json({ ok: true });
+    }
+    if (path === "/admin/ban" && req.method === "DELETE") {
+      await ensure(env);
+      const id = String(url.searchParams.get("id") || "").replace(/\D/g, "");
+      if (!id) return fail("Нет записи", 400);
+      await env.DB.prepare("DELETE FROM bans WHERE discord_id = ?").bind(id).run();
+      return json({ ok: true });
+    }
     return fail("Нет такого раздела", 404);
   } catch (e) {
     return fail("Не сохранилось", 500);
   }
 }
+
+let schemaReady = false;
+async function ensure(env) {
+  if (schemaReady) return;
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS counters (kind TEXT PRIMARY KEY, n INTEGER NOT NULL)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS papers (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, num TEXT, name TEXT, passport TEXT, discord_id TEXT, discord_name TEXT, created INTEGER)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, discord_id TEXT, username TEXT, created INTEGER)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS bans (discord_id TEXT PRIMARY KEY, username TEXT, created INTEGER)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, discord_id TEXT, discord_name TEXT, action TEXT, kind TEXT, num TEXT, ip TEXT)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS send_log (ip TEXT, ts INTEGER)").run();
+  try {
+    await env.DB.prepare("ALTER TABLE send_log ADD COLUMN discord_id TEXT").run();
+  } catch (e) {
+    const m = String((e && e.message) || e);
+    if (!/duplicate column/i.test(m)) throw e;
+  }
+  schemaReady = true;
+}
+function authClient(env, cors) {
+  return new Response(JSON.stringify({ clientId: env.DISCORD_CLIENT_ID || "" }), {
+    status: 200,
+    headers: { ...cors, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
+  });
+}
+async function authDiscord(req, env, json, fail) {
+  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) return fail("Вход Discord ещё не настроен", 500);
+  await ensure(env);
+  let body = {};
+  try { body = await req.json(); } catch { return fail("Bad json", 400); }
+  const code = String(body.code || "").trim();
+  if (!code) return fail("Нет кода", 400);
+  const redirect = "https://reflektpro.github.io/vp-raport/auth.html";
+  const form = new URLSearchParams();
+  form.set("grant_type", "authorization_code");
+  form.set("client_id", env.DISCORD_CLIENT_ID);
+  form.set("client_secret", env.DISCORD_CLIENT_SECRET);
+  form.set("redirect_uri", redirect);
+  form.set("code", code);
+  const tok = await fetch("https://discord.com/api/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form
+  });
+  if (!tok.ok) return fail("Discord не подтвердил вход", 400);
+  let tokJson = {};
+  try { tokJson = await tok.json(); } catch { return fail("Discord не подтвердил вход", 400); }
+  const access = tokJson.access_token;
+  if (!access) return fail("Discord не подтвердил вход", 400);
+  const meRes = await fetch("https://discord.com/api/users/@me", {
+    headers: { Authorization: "Bearer " + access }
+  });
+  if (!meRes.ok) return fail("Discord не подтвердил вход", 400);
+  let me = {};
+  try { me = await meRes.json(); } catch { return fail("Discord не подтвердил вход", 400); }
+  const id = String(me.id || "");
+  const username = String(me.username || "");
+  if (!/^\d{2,32}$/.test(id)) return fail("Discord не подтвердил вход", 400);
+  if (await isBanned(env, id)) return fail("Доступ закрыт", 403);
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  let token = "";
+  for (const b of bytes) token += b.toString(16).padStart(2, "0");
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(
+    "INSERT INTO sessions (token, discord_id, username, created) VALUES (?, ?, ?, ?)"
+  ).bind(token, id, clip(username, 80), now).run();
+  return json({ token, id, username });
+}
+async function sessionUser(req, env) {
+  await ensure(env);
+  const got = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!/^[0-9a-f]{64}$/.test(got)) return null;
+  const row = await env.DB.prepare(
+    "SELECT discord_id, username, created FROM sessions WHERE token = ?"
+  ).bind(got).first();
+  if (!row) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (now - Number(row.created || 0) > 7 * 24 * 60 * 60) return null;
+  return { id: String(row.discord_id || ""), username: String(row.username || "") };
+}
+async function isBanned(env, id) {
+  const row = await env.DB.prepare("SELECT discord_id FROM bans WHERE discord_id = ?").bind(id).first();
+  return !!row;
+}
+async function requireUser(req, env, fail) {
+  const user = await sessionUser(req, env);
+  if (!user || !user.id) return { error: fail("Сначала войди через Discord", 403) };
+  if (await isBanned(env, user.id)) return { error: fail("Доступ закрыт", 403) };
+  return { user };
+}
+async function paperPost(req, env, json, fail) {
+  await ensure(env);
+  let body = {};
+  try { body = await req.json(); } catch { return fail("Bad json", 400); }
+  const kind = body.kind === "raport" || body.kind === "promo" || body.kind === "week" ? body.kind : "";
+  if (!kind) return fail("Не тот вид", 400);
+  const who = await requireUser(req, env, fail);
+  if (who.error) return who.error;
+  const name = clip(body.name, 80);
+  const passport = digits(body.passport || "");
+  const cnt = await env.DB.prepare(
+    "INSERT INTO counters(kind, n) VALUES(?1, 1) ON CONFLICT(kind) DO UPDATE SET n = n + 1 RETURNING n"
+  ).bind(kind).first();
+  const n = cnt && Number(cnt.n);
+  if (!n) return fail("Не выдался номер", 500);
+  const now = Math.floor(Date.now() / 1000);
+  const ins = await env.DB.prepare(
+    "INSERT INTO papers (kind, num, name, passport, discord_id, discord_name, created) VALUES (?1, (CASE ?1 WHEN 'raport' THEN char(1042,1055) WHEN 'promo' THEN char(1055,1042) WHEN 'week' THEN char(1054,1058) END) || '-' || printf('%04d', ?2), ?3, ?4, ?5, ?6, ?7) RETURNING id, num"
+  ).bind(kind, n, name, passport, who.user.id, clip(who.user.username, 80), now).first();
+  if (!ins || !ins.num) return fail("Не выдался номер", 500);
+  const num = fixNum(ins.num);
+  await writeAudit(env, req, who.user, "paper", kind, num);
+  return json({ num, id: ins.id });
+}
+async function writeAudit(env, req, user, action, kind, num) {
+  const ip = req.headers.get("CF-Connecting-IP") || "";
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(
+    "INSERT INTO audit (ts, discord_id, discord_name, action, kind, num, ip) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).bind(now, user.id, clip(user.username, 80), action, clip(kind, 40), clip(num, 40), clip(ip, 64)).run();
+}
+function partText(parts, name) {
+  const p = parts.find(x => x.name === name && !x.filename);
+  return p ? new TextDecoder().decode(p.body).trim() : "";
+}
+function sendMeta(parts, content) {
+  let kind = partText(parts, "kind").slice(0, 40);
+  let num = partText(parts, "num").slice(0, 40);
+  if (!num) {
+    const m = /\u2116\s*([^\s<*]+)/.exec(String(content || ""));
+    if (m) num = m[1].replace(/[*_`]/g, "").slice(0, 40);
+  }
+  return { kind, num };
+}
+
 function fixNum(s) {
   s = String(s || "");
   const ok = (str) => {

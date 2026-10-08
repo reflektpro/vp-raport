@@ -136,7 +136,10 @@
     const u = unit();
     const res = await fetch(C.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + ((window.VP_SESSION && window.VP_SESSION()) || "")
+      },
       body: JSON.stringify({
         kind: state.kind,
         passport,
@@ -144,12 +147,11 @@
         rank: $("tRank").value.trim(),
         unit: u ? u.name : "",
         issued: $("date").value.trim(),
-        reason: points().join(", "),
-        gate: sessionStorage.getItem("vp_gate") || ""
+        reason: points().join(", ")
       })
     });
     const errText = await res.text();
-    if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+    if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
     if (!res.ok) throw new Error(errText);
     const data = JSON.parse(errText);
     if (!data.num) throw new Error("База не выдала номер");
@@ -334,11 +336,16 @@
       fd.append("payload_json", JSON.stringify(buildPayload()));
       if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
       fd.append("files[0]", new File([blob], "prikaz.png", { type: "image/png" }));
-      fd.append("gate", sessionStorage.getItem("vp_gate") || "");
+      fd.append("kind", state.kind);
+      fd.append("num", $("num").value.trim());
       status("Отправляю в Discord…");
-      const res = await fetch(target, { method: "POST", body: fd });
+      const res = await fetch(target, {
+        method: "POST",
+        body: fd,
+        headers: C.endpoint ? { Authorization: "Bearer " + ((window.VP_SESSION && window.VP_SESSION()) || "") } : undefined
+      });
       const errText = await res.text();
-      if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+      if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
       if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Приказ №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
       state.reserved = null;
@@ -372,12 +379,6 @@
     $("hist").innerHTML = "";
     refill(); status("");
   });
-
-  const gateEl = $("gate");
-  if (gateEl) {
-    gateEl.value = sessionStorage.getItem("vp_gate") || "";
-    gateEl.addEventListener("input", () => sessionStorage.setItem("vp_gate", gateEl.value));
-  }
 
   window.addEventListener("vp-rules", () => {
     UNITS = (window.VYG && window.VYG.units) || [];

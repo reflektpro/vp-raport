@@ -158,3 +158,7 @@ textarea.f{display:block;width:100%;resize:none;overflow:hidden;line-height:1.5;
 .norm-row{display:flex;gap:6px}
 .norm-row .plab{flex:1;margin-top:0}
 .norm-hint{font-size:12px;opacity:.65;margin:4px 0 8px;line-height:1.35}
+
+.vp-auth{display:flex;align-items:center;gap:4px;margin-left:12px;font-size:13px;color:#e9e6dc;white-space:nowrap}
+.vp-auth button{background:transparent;color:var(--gold2);border:1px solid #3a4440;border-radius:4px;padding:6px 10px;cursor:pointer;font:13px "Segoe UI",sans-serif}
+.vp-auth button:hover{border-color:var(--gold)}

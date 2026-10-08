@@ -22,9 +22,9 @@
   $("hdr").innerHTML = (C.header||[]).map(esc).join("<br>");
   $("city").textContent = C.city || "Москва";
   const now = new Date();
-  const newNum = () => `ОТ-${pad(now.getDate())}${pad(now.getMonth()+1)}/${100+Math.floor(Math.random()*900)}`;
   $("date").value = `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()} г.`;
-  $("num").value = newNum();
+  $("num").value = "";
+  $("num").readOnly = true;
   SAVED.forEach(id => { const v = localStorage.getItem("vp_"+id); if (v) $(id).value = v; });
 
   const weekAgo = new Date(now); weekAgo.setDate(now.getDate()-6);
@@ -48,6 +48,7 @@
     el.classList.remove("bad");
     if (SAVED.includes(el.id)) localStorage.setItem("vp_"+el.id, el.value.trim());
     if (["fromRank","fromName"].includes(el.id)) updateSignature();
+    if (el.id === "fromName" || el.id === "staticId") dropPaper();
     refill();
   }));
   ["fromDate","toDate"].forEach(id => $(id).addEventListener("change", refill));
@@ -282,6 +283,45 @@
     });
   }
 
+  const paper = { reserved: null };
+  function personKey(){ return $("fromName").value.trim() + "|" + $("staticId").value.trim(); }
+  function authHead(extra){
+    const h = extra ? Object.assign({}, extra) : {};
+    h.Authorization = "Bearer " + ((window.VP_SESSION && window.VP_SESSION()) || "");
+    return h;
+  }
+  function dropPaper(){
+    const key = personKey();
+    if (!paper.reserved || paper.reserved.key !== key) {
+      paper.reserved = null;
+      $("num").value = "";
+      fit($("num"));
+    }
+  }
+  async function takePaper(){
+    const key = personKey();
+    if (paper.reserved && paper.reserved.key === key && paper.reserved.num) {
+      $("num").value = paper.reserved.num;
+      fit($("num"));
+      return paper.reserved.num;
+    }
+    if (!C.endpoint) throw new Error("База номеров не подключена");
+    const res = await fetch(String(C.endpoint).replace(/\/$/, "") + "/paper", {
+      method: "POST",
+      headers: authHead({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ kind: "week", name: $("fromName").value.trim(), passport: "" })
+    });
+    const errText = await res.text();
+    if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
+    if (!res.ok) throw new Error(errText || "Номер не выдан");
+    const data = JSON.parse(errText);
+    if (!data.num) throw new Error("База не выдала номер");
+    paper.reserved = { key, num: data.num };
+    $("num").value = data.num;
+    fit($("num"));
+    return data.num;
+  }
+
   function validate(){
     let ok = true, first = null;
     document.querySelectorAll(".f.req").forEach(el => { if (!el.value.trim()){ el.classList.add("bad"); ok = false; first = first || el; } });
@@ -295,28 +335,35 @@
     if (bothCounted() && !confirm("И рапорты на взыскание, и выговоры заполнены. Выговор, выданный этим же рапортом, второй раз считать нельзя. Всё равно отправить?")) return;
     const target = C.endpoint || (C.directWebhook ? C.directWebhook + (C.directWebhook.includes("?") ? "&" : "?") + "wait=true" : "");
     if (!target){ status("Адрес отправки не настроен: заполни endpoint в config.js.", "err"); return; }
-    busy(true); status("Печатаю бланк…");
+    busy(true); status("Беру номер…");
     try {
+      await takePaper();
+      status("Печатаю бланк…");
       const canvas = await renderPNG();
       const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
       if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
       const fd = new FormData();
       fd.append("payload_json", JSON.stringify(buildPayload()));
       fd.append("files[0]", new File([blob], "raport.png", { type: "image/png" }));
-      fd.append("gate", sessionStorage.getItem("vp_gate") || "");
+      fd.append("kind", "week");
+      fd.append("num", $("num").value.trim());
       status("Отправляю в Discord…");
-      const res = await fetch(target, { method: "POST", body: fd });
+      const res = await fetch(target, { method: "POST", body: fd, headers: C.endpoint ? authHead() : undefined });
       const errText = await res.text();
-      if (res.status === 403) throw new Error(errText || "Неверный пароль отправки");
+      if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
       if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Отчёт №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
-      $("num").value = newNum(); fit($("num"));
+      paper.reserved = null;
+      $("num").value = "";
+      fit($("num"));
     } catch (e) { status("Не отправилось: " + e.message, "err"); } finally { busy(false); }
   });
   $("download").addEventListener("click", async () => {
     if (!validate()) return;
-    busy(true); status("Печатаю бланк…");
+    busy(true); status("Беру номер…");
     try {
+      await takePaper();
+      status("Печатаю бланк…");
       const canvas = await renderPNG(), a = document.createElement("a");
       a.href = canvas.toDataURL("image/png"); a.download = `otchet_${$("num").value.replace(/[^\wА-я-]/g,"_")}.png`; a.click();
       status("Картинка скачана.", "ok");
@@ -326,12 +373,6 @@
     if (!confirm("Обнулить всё, что отмечено за эту неделю?")) return;
     Object.keys(state).forEach(k => delete state[k]); save(); location.reload();
   });
-
-  const gateEl = $("gate");
-  if (gateEl) {
-    gateEl.value = sessionStorage.getItem("vp_gate") || "";
-    gateEl.addEventListener("input", () => sessionStorage.setItem("vp_gate", gateEl.value));
-  }
 
   refill();
   window.__vp = { buildPayload, renderPNG, state, done };

@@ -30,7 +30,7 @@
       <div class="meta">
         <input class="f" id="date" data-fit>
         <span id="city"></span>
-        <span>№<input class="f" id="num" data-fit></span>
+        <span>№<input class="f" id="num" data-fit readonly></span>
       </div>
       <div class="rule"></div>
 
@@ -84,9 +84,6 @@
       <li>Нажми «Отправить»: бланк с подписью и печатью улетит в Discord и пингнёт руководство.</li>
     </ol>
     <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
-    <label class="plab">Пароль отправки
-      <input id="gate" type="password" autocomplete="off">
-    </label>
     <button class="btn primary" id="send">Отправить рапорт</button>
     <button class="btn" id="download">Скачать PNG</button>
     <button class="btn ghost" id="clear">Очистить нарушение</button>
@@ -106,6 +103,7 @@
 </datalist>
 
 <script src="config.js"></script>
+<script src="auth.js"></script>
 <script src="html2canvas.min.js"></script>
 <script src="app.js"></script>
 </body>
