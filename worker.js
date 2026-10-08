@@ -15,9 +15,16 @@ export default {
 
     let form;
     try { form = await req.formData(); } catch { return new Response("Bad form", { status: 400, headers: cors }); }
-    const file = form.get("files[0]");
-    if (!file || file.type !== "image/png" || file.size > 7 * 1024 * 1024)
-      return new Response("Нужна PNG-картинка до 7 МБ", { status: 400, headers: cors });
+    // браузер часто шлёт файл без типа, поэтому смотрим на саму картинку, а не на подпись
+    let file = form.get("files[0]");
+    if (!file || typeof file.arrayBuffer !== "function") {
+      for (const v of form.values()) { if (v && typeof v.arrayBuffer === "function") { file = v; break; } }
+    }
+    const bytes = file && typeof file.arrayBuffer === "function" ? await file.arrayBuffer() : null;
+    const h = bytes ? new Uint8Array(bytes, 0, Math.min(8, bytes.byteLength)) : new Uint8Array();
+    const isPng = h[0] === 0x89 && h[1] === 0x50 && h[2] === 0x4e && h[3] === 0x47;
+    if (!bytes || !isPng || bytes.byteLength > 8 * 1024 * 1024)
+      return new Response("Картинка не принята: тип «" + ((file && file.type) || "пусто") + "», размер " + (bytes ? bytes.byteLength : 0) + " байт", { status: 400, headers: cors });
 
     let payload = {};
     try { payload = JSON.parse(form.get("payload_json") || "{}"); } catch {}
@@ -46,7 +53,7 @@ export default {
       allowed_mentions: { parse: [], roles },
       attachments: [{ id: 0, filename: "raport.png" }]
     }));
-    out.append("files[0]", file, "raport.png");
+    out.append("files[0]", new Blob([bytes], { type: "image/png" }), "raport.png");
 
     const res = await fetch(env.WEBHOOK_URL + "?wait=true", { method: "POST", body: out });
     return new Response(res.ok ? "ok" : await res.text(), { status: res.ok ? 200 : 502, headers: cors });

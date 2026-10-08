@@ -198,7 +198,8 @@
       const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
       const fd = new FormData();
       fd.append("payload_json", JSON.stringify(buildPayload()));
-      fd.append("files[0]", blob, "raport.png");
+      if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
+      fd.append("files[0]", new File([blob], "raport.png", { type: "image/png" }));
       status("Отправляю в Discord…");
       const res = await fetch(target, { method: "POST", body: fd });
       if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
