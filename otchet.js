@@ -4,15 +4,13 @@
   const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   const SAVED = ["fromPos","fromRank","fromName","staticId"];
   const RANK_INS = {"рядовой":"рядового","ефрейтор":"ефрейтора","младший сержант":"младшего сержанта","сержант":"сержанта","старший сержант":"старшего сержанта","старшина":"старшины","прапорщик":"прапорщика","старший прапорщик":"старшего прапорщика","младший лейтенант":"младшего лейтенанта","лейтенант":"лейтенанта","старший лейтенант":"старшего лейтенанта","капитан":"капитана","майор":"майора","подполковник":"подполковника","полковник":"полковника","генерал-майор":"генерал-майора","генерал-лейтенант":"генерал-лейтенанта","генерал-полковник":"генерал-полковника","генерал армии":"генерала армии"};
-  const CATS = [
-    { key:"vzysk", name:"Выдача взысканий, рапорты на взыскания" },
-    { key:"vygovor", name:"Выговоры", sub:true },
-    { key:"prizyv", name:"Обеспечение безопасности на призыве" },
-    { key:"city", name:"Вывоз военнослужащих в город" },
-    { key:"events", name:"Организация мероприятий" },
-    { key:"supply", name:"Участие в поставках, отбитиях" },
-    { key:"proc", name:"Передача процессуальных действий" }
-  ];
+  const P = window.PROMO;
+  const CATS = [];
+  P.acts.forEach(a => {
+    CATS.push(a);
+    if (a.key === "vzysk") CATS.push({ key:"vygovor", name:"Выговор, не из рапорта выше", pts:0, doc:"Выговоров, не вошедших в рапорты на взыскание", sub:true });
+  });
+  CATS.push({ key:"proc", name:"Передача процессуальных действий", pts:0, doc:"Передано процессуальных действий" });
 
   $("hdr").innerHTML = (C.header||[]).map(esc).join("<br>");
   $("city").textContent = C.city || "Москва";
@@ -132,8 +130,10 @@
     row.dataset.key = c.key;
     row.innerHTML = `
       <div class="act-top">
-        <div class="act-name">${esc(c.name)}</div>
-        <div class="ctr"><button data-d="-1">−</button><input type="number" min="0" value="${st(c.key).n}" data-n><button data-d="1">+</button></div>
+        <div class="act-name">${esc(c.name)}${c.pts ? `<span class="pts">+${c.pts}</span>` : ""}</div>
+        ${c.once
+          ? `<label class="act-once"><input type="checkbox" data-once ${st(c.key).n ? "checked" : ""}></label>`
+          : `<div class="ctr"><button data-d="-1">−</button><input type="number" min="0" value="${st(c.key).n}" data-n><button data-d="1">+</button></div>`}
       </div>
       <details><summary>ссылки (<span data-lc>0</span>)</summary><textarea rows="2" placeholder="по одной ссылке на строку"></textarea></details>`;
     row.querySelector("textarea").value = st(c.key).links;
@@ -151,20 +151,24 @@
     b.parentElement.querySelector("[data-n]").value = s.n;
     save(); refill();
   });
+  box.addEventListener("change", e => { if (e.target.matches("[data-once]")) { st(e.target.closest(".act").dataset.key).n = e.target.checked ? 1 : 0; save(); refill(); } });
   box.addEventListener("input", e => {
     const row = e.target.closest(".act"); if (!row) return;
     const s = st(row.dataset.key);
     if (e.target.matches("[data-n]")) s.n = Math.max(0, Number(e.target.value) || 0);
+    if (e.target.matches("[data-once]")) s.n = e.target.checked ? 1 : 0;
     if (e.target.matches("textarea")) {
       s.links = e.target.value;
       const got = linksOf(row.dataset.key).length;
-      if (got > s.n) s.n = got;
-      row.querySelector("[data-n]").value = s.n;
+      const once = row.querySelector("[data-once]");
+      if (once) { if (got && !s.n) { s.n = 1; once.checked = true; } }
+      else if (got > s.n) { s.n = got; row.querySelector("[data-n]").value = s.n; }
     }
     save(); refill();
   });
 
   function done(){ return CATS.map(c => ({...c, n: st(c.key).n, links: linksOf(c.key)})).filter(c => c.n > 0); }
+  function totalPts(){ return CATS.reduce((s,c) => s + st(c.key).n * (c.pts || 0), 0); }
   function bothCounted(){ return st("vzysk").n > 0 && st("vygovor").n > 0; }
 
   function refill(){
@@ -178,9 +182,14 @@
     $("toText").textContent = human($("toDate").value);
 
     const list = done();
+    const pts = totalPts();
     $("workList").innerHTML = list.length
-      ? list.map(c => `<li>${esc(c.name)}: ${c.n}.</li>`).join("")
+      ? list.map(c => `<li>${esc(c.doc || c.name)}: ${c.n}${c.pts ? ` (${c.n * c.pts} баллов)` : ""}.</li>`).join("")
       : `<li class="ph">здесь появится сделанное за неделю</li>`;
+    $("summary").textContent = pts ? `Итого набрано баллов: ${pts}.` : "";
+    $("barText").textContent = pts ? `${pts} баллов за неделю` : "0 баллов";
+    $("barFill").style.width = pts ? "100%" : "0";
+    $("barFill").classList.toggle("full", pts > 0);
     const proofs = list.reduce((s,c) => s + c.links.length, 0);
     $("proofCount").textContent = proofs;
     $("appendix").style.display = proofs ? "" : "none";
@@ -201,11 +210,12 @@
     const fromLine = `${$("fromPos").value.trim()}, ${$("fromRank").value.trim()} ${$("fromName").value.trim()} | ${$("staticId").value.trim()}`;
     const period = `${human($("fromDate").value)} — ${human($("toDate").value)}`;
     const list = done();
-    const lines = list.map(c => `${c.name} (${c.n}): ${linkList(c.links)}`.trim());
+    const lines = list.map(c => `${c.doc || c.name} (${c.n}${c.pts ? `, ${c.n * c.pts} б.` : ""}): ${linkList(c.links)}`.trim());
     let body = [
       `📋 **ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ №${$("num").value.trim()}**`,
       `**От:** ${fromLine}`,
       `**Период:** ${period}`,
+      `**Баллы:** ${totalPts()}`,
       "",
       `Я, ${$("fromName").value.trim()}, ${$("fromPos").value.trim()} в звании ${$("rankInText").textContent} в промежуток времени от ${human($("fromDate").value)} до ${human($("toDate").value)} выполнил следующую работу:`,
       ...lines

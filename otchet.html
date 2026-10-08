@@ -40,6 +40,7 @@
         выполнил следующую работу:</p>
 
       <ol class="items" id="workList"></ol>
+      <p class="para" id="summary"></p>
 
       <div class="appendix" id="appendix">
         <b>Приложение:</b>
@@ -71,6 +72,7 @@
       <span>—</span>
       <input type="date" id="toDate">
     </div>
+    <div class="bar"><div class="bar-fill" id="barFill"></div><span id="barText">0 баллов</span></div>
     <div class="acts-hint">Жми «+» за каждое дело и вставляй ссылки на доказательства, по одной на строку. В документ ссылки не попадают: они уходят в сообщение, в скобки после названия.</div>
     <div id="acts"></div>
     <div class="vygovor-note ok" id="vygNote">Выговор, который ты уже выдал рапортом на взыскание, второй раз не считается. Оставь что-то одно: либо рапорт, либо выговор.</div>
@@ -94,6 +96,7 @@
 </datalist>
 
 <script src="config.js"></script>
+<script src="promo-rules.js"></script>
 <script src="html2canvas.min.js"></script>
 <script src="otchet.js"></script>
 </body>
