@@ -147,3 +147,9 @@ textarea.f{display:block;width:100%;resize:none;overflow:hidden;line-height:1.5;
 .topbar > div{min-width:220px}
 .topbar .t1{font-size:16px;letter-spacing:1px;white-space:nowrap}
 .tabs a{padding:7px 9px;font-size:13px;letter-spacing:.4px}
+
+.hist{font-size:13px;line-height:1.4;margin:8px 0 4px;padding:8px 10px;border-radius:4px;background:#1d2b1d;color:#c6e6c6}
+.hist:empty{display:none}
+.hist.repeat{background:#3a2218;color:#ffd7c2;border:1px solid #a85a32}
+.hist ol{margin:4px 0 0;padding-left:18px}
+.hist b{color:#fff}

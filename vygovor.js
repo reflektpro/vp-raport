@@ -14,7 +14,7 @@
     "генерал армии":"генералу армии"
   };
   const SAVED = ["fromPos","fromRank","fromName"];
-  const state = { kind: "vyg" };
+  const state = { kind: "vyg", reserved: null };
 
   $("city").textContent = C.city || "Москва";
   const now = new Date();
@@ -39,7 +39,8 @@
     el.style.width = Math.ceil(w + 12) + "px";
   }
   document.querySelectorAll("input[data-fit]").forEach(el => { fit(el); el.addEventListener("input", () => fit(el)); });
-  freshNum();
+  $("num").value = "";
+  fit($("num"));
   document.fonts && document.fonts.ready.then(() => {
     document.querySelectorAll("input[data-fit]").forEach(fit);
     updateSignature();
@@ -50,24 +51,90 @@
     if (SAVED.includes(el.id)) localStorage.setItem("vp_"+el.id, el.value.trim());
     if (["fromRank","fromName"].includes(el.id)) updateSignature();
   }));
-  ["tRank","tName","tPass"].forEach(id => $(id).addEventListener("input", () => { $(id).classList.remove("bad"); refill(); }));
+  ["tRank","tName","tPass"].forEach(id => $(id).addEventListener("input", () => {
+    $(id).classList.remove("bad");
+    if (id === "tPass") { dropNumber(); scheduleHistory(); }
+    refill();
+  }));
   $("unit").addEventListener("change", () => { persist(); refill(); });
   $("kind").addEventListener("click", e => {
     const b = e.target.closest("button");
     if (!b) return;
     state.kind = b.dataset.kind;
-    freshNum();
+    dropNumber();
     persist();
     refill();
+    loadHistory();
   });
 
   function unit(){ return UNITS.find(u => u.id === $("unit").value) || UNITS[0]; }
   function items(){ const u = unit(); return (u && u[state.kind]) || []; }
   function persist(){ localStorage.setItem("vp_vyg", JSON.stringify({ kind: state.kind, unit: $("unit").value })); }
-  function freshNum(){
-    const p = state.kind === "pred" ? "ПР" : "ВГ";
-    $("num").value = `${p}-${pad(now.getDate())}${pad(now.getMonth()+1)}/${100+Math.floor(Math.random()*900)}`;
-    if ($("num").style) fit($("num"));
+  function digits(s){ return String(s || "").replace(/\D/g, ""); }
+  function dropNumber(){
+    const key = digits($("tPass").value) + "|" + state.kind;
+    if (!state.reserved || state.reserved.key !== key) {
+      state.reserved = null;
+      $("num").value = "";
+      fit($("num"));
+    }
+  }
+  let histTimer = 0;
+  function scheduleHistory(){ clearTimeout(histTimer); histTimer = setTimeout(loadHistory, 300); }
+  async function loadHistory(){
+    const box = $("hist");
+    const passport = digits($("tPass").value);
+    if (passport.length < 3 || !C.endpoint) { box.className = "hist"; box.innerHTML = ""; return; }
+    try {
+      const res = await fetch(C.endpoint + "?passport=" + encodeURIComponent(passport));
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const orders = data.orders || [];
+      if (!orders.length) {
+        box.className = "hist";
+        box.innerHTML = "По этому паспорту записей нет.";
+        return;
+      }
+      const lines = orders.map(o => {
+        const kind = o.kind === "pred" ? "Предупреждение" : "Выговор";
+        return `<li><b>${esc(o.num)}</b> ${esc(kind)}${o.issued ? ", " + esc(o.issued) : ""}${o.unit ? " · " + esc(o.unit) : ""}</li>`;
+      }).join("");
+      box.className = "hist repeat";
+      box.innerHTML = `<b>Повторное.</b> По паспорту уже есть:<ol>${lines}</ol>`;
+    } catch (e) {
+      box.className = "hist";
+      box.textContent = "Историю не удалось загрузить.";
+    }
+  }
+  async function takeNumber(){
+    const passport = digits($("tPass").value);
+    const key = passport + "|" + state.kind;
+    if (state.reserved && state.reserved.key === key) {
+      $("num").value = state.reserved.num;
+      fit($("num"));
+      return state.reserved.num;
+    }
+    if (!C.endpoint) throw new Error("База номеров не подключена");
+    const u = unit();
+    const res = await fetch(C.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: state.kind,
+        passport,
+        name: $("tName").value.trim(),
+        rank: $("tRank").value.trim(),
+        unit: u ? u.name : "",
+        issued: $("date").value.trim()
+      })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (!data.num) throw new Error("База не выдала номер");
+    state.reserved = { key, num: data.num };
+    $("num").value = data.num;
+    fit($("num"));
+    return data.num;
   }
   function rankDat(raw){
     const t = raw.trim();
@@ -213,8 +280,10 @@
     if (!validate()) return;
     const target = C.endpoint || (C.directWebhook ? C.directWebhook + (C.directWebhook.includes("?") ? "&" : "?") + "wait=true" : "");
     if (!target){ status("Адрес отправки не настроен: заполни endpoint в config.js.", "err"); return; }
-    busy(true); status("Печатаю бланк…");
+    busy(true); status("Беру номер…");
     try {
+      await takeNumber();
+      status("Печатаю бланк…");
       const canvas = await renderPNG();
       const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
       const fd = new FormData();
@@ -225,7 +294,10 @@
       const res = await fetch(target, { method: "POST", body: fd });
       if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
       status(`Приказ №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
-      freshNum();
+      state.reserved = null;
+      $("num").value = "";
+      fit($("num"));
+      loadHistory();
     } catch (e) {
       status("Не отправилось: " + e.message, "err");
     } finally { busy(false); }
@@ -233,8 +305,10 @@
 
   $("download").addEventListener("click", async () => {
     if (!validate()) return;
-    busy(true); status("Печатаю бланк…");
+    busy(true); status("Беру номер…");
     try {
+      await takeNumber();
+      status("Печатаю бланк…");
       const canvas = await renderPNG();
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
@@ -246,6 +320,9 @@
 
   $("clear").addEventListener("click", () => {
     ["tRank","tName","tPass"].forEach(id => { $(id).value = ""; $(id).classList.remove("bad"); });
+    dropNumber();
+    $("hist").className = "hist";
+    $("hist").innerHTML = "";
     refill(); status("");
   });
 

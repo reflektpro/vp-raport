@@ -30,7 +30,7 @@
       <div class="meta">
         <input class="f" id="date" data-fit>
         <span id="city"></span>
-        <span>№<input class="f" id="num" data-fit></span>
+        <span>№<input class="f" id="num" data-fit placeholder="по порядку"></span>
       </div>
       <div class="rule"></div>
 
@@ -79,6 +79,7 @@
     <label class="plab">Паспорт
       <input id="tPass" placeholder="000-000" autocomplete="off">
     </label>
+    <div class="hist" id="hist"></div>
     <h3 class="duty-h">Отработка, все пункты</h3>
     <ol class="duty-preview" id="dutyPreview"></ol>
     <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
@@ -86,7 +87,7 @@
     <button class="btn" id="download">Скачать PNG</button>
     <button class="btn ghost" id="clear">Очистить нарушителя</button>
     <div class="status" id="status"></div>
-    <div class="note">Для одного подразделения предупреждение и выговор всегда одинаковые: в приказ попадают все пункты из таблицы, выбрать часть нельзя.</div>
+    <div class="note">Для одного подразделения отработка всегда одинаковая, все пункты. Номер приказа берётся по порядку из базы, а по паспорту видно, были ли уже предупреждение или выговор.</div>
   </aside>
 </main>
 
@@ -98,6 +99,11 @@
 </datalist>
 <datalist id="positions">
   <option>Стажёр ВП</option><option>Инспектор ВП</option><option>Дознаватель ВП</option><option>Инструктор ВП</option><option>Зам. Ком. Бат ВП</option><option>Ком. Бат ВП</option><option>Инспектор военной комендатуры</option><option>Дознаватель военной комендатуры</option><option>Заместитель коменданта гарнизона</option><option>Комендант гарнизона</option>
+  <option>Командир 1-ой мотострелковой бригады</option>
+  <option>Первый Заместитель Командира Бригады</option>
+  <option>Начальник штаба войсковой части №12132</option>
+  <option>Заместитель командира бригады по Материально-техническому обеспечению</option>
+  <option>Помощник командира бригады войсковой части №12132</option>
 </datalist>
 
 <script src="config.js"></script>

@@ -1,18 +1,47 @@
-// Cloudflare Worker: принимает рапорт с сайта и пересылает в вебхук Discord.
-// Секреты (Settings → Variables): WEBHOOK_URL — ссылка вебхука, ROLE_IDS — id ролей через запятую,
-// ALLOWED_ORIGIN — адрес сайта, например https://твой-ник.github.io
+// Cloudflare Worker: рапорт в Discord и журнал приказов в D1.
+// Секреты: WEBHOOK_URL, ROLE_IDS, ALLOWED_ORIGIN. База: DB (D1 vp-prikazy).
 export default {
   async fetch(req, env) {
     const cors = {
       "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Content-Type": "text/plain; charset=utf-8"
     };
     const fail = (text, status) => new Response(text, { status, headers: cors });
+    const json = (obj, status) => new Response(JSON.stringify(obj), {
+      status: status || 200,
+      headers: { ...cors, "Content-Type": "application/json; charset=utf-8" }
+    });
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (req.method !== "POST") return fail("Method not allowed", 405);
     if (env.ALLOWED_ORIGIN && req.headers.get("Origin") !== env.ALLOWED_ORIGIN) return fail("Forbidden", 403);
+
+    if (req.method === "GET") {
+      const passport = digits(new URL(req.url).searchParams.get("passport") || "");
+      if (passport.length < 3) return fail("Нужен номер паспорта", 400);
+      const rows = await env.DB.prepare(
+        "SELECT num, kind, name, rank, unit_name AS unit, issued FROM orders WHERE passport = ? ORDER BY id"
+      ).bind(passport).all();
+      return json({ orders: rows.results || [] });
+    }
+    if (req.method !== "POST") return fail("Method not allowed", 405);
+
+    const ctype = req.headers.get("content-type") || "";
+    if (ctype.includes("application/json")) {
+      let body = {};
+      try { body = await req.json(); } catch { return fail("Bad json", 400); }
+      const passport = digits(body.passport || "");
+      if (passport.length < 3) return fail("Нужен номер паспорта", 400);
+      const kind = body.kind === "pred" ? "pred" : "vyg";
+      const prefix = kind === "pred" ? "ПР" : "ВГ";
+      const ins = await env.DB.prepare(
+        "INSERT INTO orders (num, kind, passport, name, rank, unit_name, issued) VALUES ('', ?, ?, ?, ?, ?, ?)"
+      ).bind(kind, passport, clip(body.name, 80), clip(body.rank, 40), clip(body.unit, 160), clip(body.issued, 40)).run();
+      const id = ins.meta.last_row_id;
+      const num = prefix + "-" + String(id).padStart(4, "0");
+      await env.DB.prepare("UPDATE orders SET num = ? WHERE id = ?").bind(num, id).run();
+      return json({ num, id });
+    }
 
     let parts;
     try { parts = await readParts(req); }
@@ -55,7 +84,9 @@ export default {
   }
 };
 
-// Разбор multipart вручную: встроенный formData() на воркере превращает файл в текст и портит картинку.
+function digits(s) { return String(s || "").replace(/\D/g, ""); }
+function clip(s, n) { return String(s || "").trim().slice(0, n); }
+
 async function readParts(req) {
   const m = /boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(req.headers.get("content-type") || "");
   if (!m) throw new Error("no boundary");
