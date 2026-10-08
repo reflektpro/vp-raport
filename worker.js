@@ -28,10 +28,21 @@ export default {
       .replace(/<@&?\d+>/g, "");
     content = roles.map(r => `<@&${r}>`).join(" ") + "\n" + content.trim();
 
+    // карточка с доказательствами (для рапорта на повышение)
+    const embeds = (Array.isArray(payload.embeds) ? payload.embeds : []).slice(0, 2).map(e => ({
+      title: String(e.title || "").slice(0, 256),
+      color: Number.isInteger(e.color) ? e.color : undefined,
+      description: e.description ? String(e.description).slice(0, 4000) : undefined,
+      fields: (Array.isArray(e.fields) ? e.fields : []).slice(0, 25).map(f => ({
+        name: String(f.name || "—").slice(0, 256), value: String(f.value || "—").slice(0, 1024), inline: !!f.inline
+      }))
+    }));
+
     const out = new FormData();
     out.append("payload_json", JSON.stringify({
       username: "Военная полиция · Рапорты",
       content,
+      embeds,
       allowed_mentions: { parse: [], roles },
       attachments: [{ id: 0, filename: "raport.png" }]
     }));

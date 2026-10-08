@@ -50,13 +50,6 @@
     if (/(ов|ев|ёв|ин|ын)$/.test(l)) return s+"а";
     return s;
   }
-  function addrFromText(){
-    const n = parseName($("fromName").value), r = $("fromRank").value.trim();
-    if (!n) return "________________";
-    const rg = RANK_GEN[r.toLowerCase()] || r.toLowerCase();
-    const parts = n.short.split(" ");
-    return `${rg} ${surnameGen(parts[0])} ${parts.slice(1).join(" ")}`.trim();
-  }
 
   // ---------- автоподпись ----------
   function rng(seedStr){

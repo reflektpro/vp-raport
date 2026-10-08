@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГУ ВП · Рапорт на повышение</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Tinos:ital,wght@0,400;0,700;1,400&family=Oswald:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="promo">
+<header class="topbar">
+  <img src="emblem.png" alt="">
+  <div>
+    <div class="t1">ГЛАВНОЕ УПРАВЛЕНИЕ ВОЕННОЙ ПОЛИЦИИ</div>
+    <div class="t2">Электронный рапорт на повышение</div>
+  </div>
+  <nav class="tabs"><a href="index.html">На взыскание</a><a href="povyshenie.html" class="on">На повышение</a></nav>
+</header>
+
+<main class="layout">
+  <section class="desk">
+    <div class="paper" id="paper">
+      <div class="emblem"><img src="emblem.png" alt=""></div>
+      <div class="hdr" id="hdr"></div>
+
+      <h1 class="title">Р А П О Р Т</h1>
+      <div class="subtitle">О повышении в воинском звании</div>
+      <div class="meta">
+        <input class="f" id="date" data-fit>
+        <span id="city"></span>
+        <span>№<input class="f" id="num" data-fit></span>
+      </div>
+      <div class="rule"></div>
+
+      <p class="para">Я, <span class="calc" id="nameInText">________</span>, проходящий службу в Военной полиции на должности
+        <span class="calc" id="posInText">________</span> в звании <span class="calc" id="rankInText">________</span>,
+        прошу рассмотреть возможность моего повышения в звании до
+        <input class="f req" id="target" data-fit placeholder="звание" list="ranks" autocomplete="off">.</p>
+
+      <p class="para"><b>Мои достижения за период службы:</b></p>
+      <ol class="items" id="achList"></ol>
+      <div class="extra-wrap"><textarea class="f" id="extra" rows="1" placeholder="дополнительно (необязательно): другие заслуги своими словами"></textarea></div>
+      <p class="para" id="summary"></p>
+
+      <p class="para">Прошу уведомить о принятом решении в установленном порядке.</p>
+
+      <div class="appendix" id="appendix">
+        <b>Приложение:</b>
+        <div class="app-row">1. Материалы, подтверждающие выполненную работу (<span id="proofCount">0</span> шт.)</div>
+      </div>
+
+      <div class="sign">
+        <div class="sign-left">
+          <input class="f req" id="fromPos" data-fit placeholder="должность" list="positions" autocomplete="off">
+          <input class="f req" id="fromRank" data-fit placeholder="текущее звание" list="ranks" autocomplete="off">
+        </div>
+        <div class="sign-mid">
+          <img id="stamp" alt="">
+          <div class="autograph" id="autograph"><span id="autoText"></span><svg id="autoFlourish" viewBox="0 0 240 100"><path id="autoPath" d=""/></svg></div>
+        </div>
+        <div class="sign-right">
+          <input class="f req" id="fromName" data-fit placeholder="Имя Фамилия">
+          <div class="sign-hint">подпись появится сама</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel calc-panel">
+    <h2>Калькулятор повышения</h2>
+    <div class="route" id="route">Укажи текущее звание внизу бланка</div>
+    <div class="bar"><div class="bar-fill" id="barFill"></div><span id="barText">0 баллов</span></div>
+    <ul class="crit" id="crit"></ul>
+    <div class="crit-note" id="critNote"></div>
+
+    <h3>Что сделано</h3>
+    <div class="acts-hint">Жми «+» за каждое выполненное дело и вставляй ссылки на доказательства, по одной на строку. Если ссылок больше, чем отмечено, счётчик подтянется сам.</div>
+    <div id="acts"></div>
+
+    <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
+    <button class="btn primary" id="send">Отправить рапорт</button>
+    <button class="btn" id="download">Скачать PNG</button>
+    <button class="btn ghost" id="clear">Обнулить достижения</button>
+    <div class="status" id="status"></div>
+  </aside>
+</main>
+
+<datalist id="ranks">
+  <option>Рядовой</option><option>Ефрейтор</option><option>Младший сержант</option><option>Сержант</option>
+  <option>Старший сержант</option><option>Старшина</option><option>Прапорщик</option><option>Старший прапорщик</option>
+  <option>Младший лейтенант</option><option>Лейтенант</option><option>Старший лейтенант</option><option>Капитан</option>
+  <option>Майор</option><option>Подполковник</option><option>Полковник</option><option>Генерал-майор</option><option>Генерал-лейтенант</option><option>Генерал-полковник</option><option>Генерал армии</option>
+</datalist>
+<datalist id="positions">
+  <option>Стажёр ВП</option><option>Инспектор ВП</option><option>Дознаватель ВП</option><option>Инструктор ВП</option><option>Зам. Ком. Бат ВП</option><option>Ком. Бат ВП</option><option>Инспектор военной комендатуры</option><option>Дознаватель военной комендатуры</option><option>Заместитель коменданта гарнизона</option><option>Комендант гарнизона</option>
+</datalist>
+
+<script src="config.js"></script>
+<script src="promo-rules.js"></script>
+<script src="html2canvas.min.js"></script>
+<script src="povyshenie.js"></script>
+</body>
+</html>
