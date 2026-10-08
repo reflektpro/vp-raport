@@ -3,30 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ГУ ВП · Еженедельный отчёт</title>
+<title>ГУ ВП · Приказ о взыскании</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Tinos:ital,wght@0,400;0,700;1,400&family=Oswald:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
-<body class="promo">
+<body>
 <header class="topbar">
   <img src="emblem.png" alt="">
   <div>
     <div class="t1">ГЛАВНОЕ УПРАВЛЕНИЕ ВОЕННОЙ ПОЛИЦИИ</div>
-    <div class="t2">Еженедельный отчёт</div>
+    <div class="t2">Приказ о дисциплинарном взыскании</div>
   </div>
-  <nav class="tabs"><a href="index.html">На взыскание</a><a href="povyshenie.html">На повышение</a><a href="otchet.html" class="on">Отчёт</a><a href="vygovor.html">Выговор</a></nav>
+  <nav class="tabs"><a href="index.html">На взыскание</a><a href="povyshenie.html">На повышение</a><a href="otchet.html">Отчёт</a><a href="vygovor.html" class="on">Выговор</a></nav>
 </header>
 
 <main class="layout">
   <section class="desk">
     <div class="paper" id="paper">
       <div class="emblem"><img src="emblem.png" alt=""></div>
-      <div class="hdr" id="hdr"></div>
+      <div class="hdr">Министерство обороны Российской Федерации<br>Московский военный округ Вооружённых сил<br>Российской Федерации</div>
 
-      <h1 class="title">О Т Ч Ё Т</h1>
-      <div class="subtitle">О проделанной работе за неделю</div>
+      <h1 class="title">П Р И К А З</h1>
+      <div class="subtitle">О вынесении дисциплинарного взыскания</div>
       <div class="meta">
         <input class="f" id="date" data-fit>
         <span id="city"></span>
@@ -34,18 +34,15 @@
       </div>
       <div class="rule"></div>
 
-      <p class="para">Я, <span class="calc" id="nameInText">________</span>, <span class="calc" id="posInText">________</span>
-        в звании <span class="calc" id="rankInText">________</span>, статик №<span class="calc" id="staticInText">____</span>,
-        в промежуток времени от <span class="calc" id="fromText">ДД.ММ.ГГГГ</span> до <span class="calc" id="toText">ДД.ММ.ГГГГ</span>
-        выполнил следующую работу:</p>
+      <p class="para">В связи с совершением дисциплинарного проступка, предусмотренного пунктом 11 части 2 главы 5 Внутреннего устава 1-й Мотострелковой бригады Вооруженных сил Российской Федерации, <b>ПРИКАЗЫВАЮ:</b></p>
 
-      <ol class="items" id="workList"></ol>
-      <p class="para" id="summary"></p>
-
-      <div class="appendix" id="appendix">
-        <b>Приложение:</b>
-        <div class="app-row">1. Материалы, подтверждающие выполненную работу (<span id="proofCount">0</span> шт.)</div>
-      </div>
+      <ol class="items">
+        <li>Выдать дисциплинарное взыскание в виде <span id="kindWord">выговора</span> <span class="calc" id="rankShow">________</span> <span class="calc" id="nameShow">________</span> с номером паспорта <span class="calc" id="passShow">______</span>.</li>
+        <li>Назначить военнослужащему отработку дисциплинарного взыскания в виде:
+          <ol class="subitems" id="workList"></ol>
+        </li>
+        <li>Настоящий Приказ вступает в законную силу с момента его официального опубликования и утверждения командующим составом батальона военной полиции Воинской части №12132.</li>
+      </ol>
 
       <div class="sign">
         <div class="sign-left">
@@ -58,30 +55,38 @@
         </div>
         <div class="sign-right">
           <input class="f req" id="fromName" data-fit placeholder="Имя Фамилия">
-          <div class="static-line">статик № <input class="f req" id="staticId" data-fit placeholder="0000"></div>
           <div class="sign-hint">подпись появится сама</div>
         </div>
       </div>
     </div>
   </section>
 
-  <aside class="panel calc-panel">
-    <h2>За неделю</h2>
-    <div class="week-dates">
-      <input type="date" id="fromDate">
-      <span>—</span>
-      <input type="date" id="toDate">
+  <aside class="panel">
+    <h2>Приказ</h2>
+    <div class="kind" id="kind">
+      <button type="button" data-kind="pred">Предупреждение</button>
+      <button type="button" data-kind="vyg" class="on">Выговор</button>
     </div>
-    <div class="bar"><div class="bar-fill" id="barFill"></div><span id="barText">0 баллов</span></div>
-    <div class="acts-hint">Жми «+» за каждое дело и вставляй ссылки на доказательства, по одной на строку. В документ ссылки не попадают: они уходят в сообщение, в скобки после названия.</div>
-    <div id="acts"></div>
-    <div class="vygovor-note ok" id="vygNote">Выговор, который ты уже выдал рапортом на взыскание, второй раз не считается. Оставь что-то одно: либо рапорт, либо выговор.</div>
-
+    <label class="plab">Подразделение
+      <select id="unit"></select>
+    </label>
+    <label class="plab">Звание
+      <input id="tRank" list="ranks" autocomplete="off" placeholder="Сержант">
+    </label>
+    <label class="plab">Имя и фамилия
+      <input id="tName" placeholder="Имя Фамилия" autocomplete="off">
+    </label>
+    <label class="plab">Паспорт
+      <input id="tPass" placeholder="000-000" autocomplete="off">
+    </label>
+    <h3 class="duty-h">Отработка, все пункты</h3>
+    <ol class="duty-preview" id="dutyPreview"></ol>
     <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
-    <button class="btn primary" id="send">Отправить отчёт</button>
+    <button class="btn primary" id="send">Отправить приказ</button>
     <button class="btn" id="download">Скачать PNG</button>
-    <button class="btn ghost" id="clear">Обнулить неделю</button>
+    <button class="btn ghost" id="clear">Очистить нарушителя</button>
     <div class="status" id="status"></div>
+    <div class="note">Для одного подразделения предупреждение и выговор всегда одинаковые: в приказ попадают все пункты из таблицы, выбрать часть нельзя.</div>
   </aside>
 </main>
 
@@ -96,8 +101,8 @@
 </datalist>
 
 <script src="config.js"></script>
-<script src="promo-rules.js"></script>
+<script src="vygovor-rules.js"></script>
 <script src="html2canvas.min.js"></script>
-<script src="otchet.js"></script>
+<script src="vygovor.js"></script>
 </body>
 </html>

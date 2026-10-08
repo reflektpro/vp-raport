@@ -130,3 +130,20 @@ textarea.f{display:block;width:100%;resize:none;overflow:hidden;line-height:1.5;
 .week-dates span{opacity:.6}
 
 .static-line{margin-top:2px;white-space:nowrap}
+
+/* приказ о выговоре */
+.kind{display:flex;gap:6px;margin:0 0 10px}
+.kind button{flex:1;padding:8px 6px;border-radius:4px;border:1px solid #4a5550;background:#2a322f;color:#e9e6dc;font-family:Oswald,sans-serif;letter-spacing:.5px;text-transform:uppercase;font-size:13px;cursor:pointer}
+.kind button.on{border-color:var(--gold);color:var(--gold2);background:#2c291c}
+.plab{display:block;font-size:12px;opacity:.7;margin:8px 0 0}
+.plab input,.plab select{display:block;width:100%;margin-top:3px;background:#111614;color:#e9e6dc;border:1px solid #3a4440;border-radius:3px;padding:6px 8px;font-size:14px;opacity:1}
+.plab input.bad{border-color:#d33;background:#3a2222}
+.duty-h{font-family:Oswald,sans-serif;font-weight:600;letter-spacing:1px;color:var(--gold2);font-size:14px;text-transform:uppercase;margin:14px 0 4px}
+.duty-preview{margin:0 0 12px;padding-left:18px;font-size:13px;line-height:1.4}
+.duty-preview li{margin-bottom:3px}
+.subitems{margin:4px 0 2px;padding-left:22px}
+.subitems li{margin-bottom:2px}
+
+.topbar > div{min-width:220px}
+.topbar .t1{font-size:16px;letter-spacing:1px;white-space:nowrap}
+.tabs a{padding:7px 9px;font-size:13px;letter-spacing:.4px}
