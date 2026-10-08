@@ -17,7 +17,7 @@
     "генерал армии":"генералу армии"
   };
   const SAVED = ["fromPos","fromRank","fromName"];
-  const state = { kind: "vyg", reserved: null };
+  const state = { kind: "vyg" };
 
   $("city").textContent = C.city || "Москва";
   const now = new Date();
@@ -42,9 +42,11 @@
     el.style.width = Math.ceil(w + 12) + "px";
   }
   document.querySelectorAll("input[data-fit]").forEach(el => { fit(el); el.addEventListener("input", () => fit(el)); });
-  $("num").value = "";
-  $("num").readOnly = true;
-  fit($("num"));
+  // Номер: база предлагает следующий, поле можно править; занятый номер база не примет (409).
+  const numBox = window.VP_NUM({
+    el: $("num"), kind: () => "order", type: () => state.kind,
+    person: () => digits($("tPass").value) + "|" + state.kind, fit
+  });
   document.fonts && document.fonts.ready.then(() => {
     document.querySelectorAll("input[data-fit]").forEach(fit);
     updateSignature();
@@ -74,6 +76,7 @@
     if (!b) return;
     state.kind = b.dataset.kind;
     dropNumber();
+    numBox.refresh(false);
     persist();
     refill();
     loadHistory();
@@ -88,14 +91,7 @@
   }
   function persist(){ localStorage.setItem("vp_vyg", JSON.stringify({ kind: state.kind, unit: $("unit").value })); }
   function digits(s){ return String(s || "").replace(/\D/g, ""); }
-  function dropNumber(){
-    const key = digits($("tPass").value) + "|" + state.kind;
-    if (!state.reserved || state.reserved.key !== key) {
-      state.reserved = null;
-      $("num").value = "";
-      fit($("num"));
-    }
-  }
+  function dropNumber(){ numBox.changed(); }
   let histTimer = 0;
   function scheduleHistory(){ clearTimeout(histTimer); histTimer = setTimeout(loadHistory, 300); }
   async function loadHistory(){
@@ -125,16 +121,10 @@
     }
   }
   async function takeNumber(){
-    const passport = digits($("tPass").value);
-    const key = passport + "|" + state.kind;
-    if (state.reserved && state.reserved.key === key) {
-      $("num").value = state.reserved.num;
-      fit($("num"));
-      return state.reserved.num;
-    }
     if (!C.endpoint) throw new Error("База номеров не подключена");
+    const passport = digits($("tPass").value);
     const u = unit();
-    const res = await fetch(C.endpoint, {
+    return numBox.take(raw => fetch(C.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -142,6 +132,7 @@
       },
       body: JSON.stringify({
         kind: state.kind,
+        num: raw,
         passport,
         name: $("tName").value.trim(),
         rank: $("tRank").value.trim(),
@@ -149,16 +140,7 @@
         issued: $("date").value.trim(),
         reason: points().join(", ")
       })
-    });
-    const errText = await res.text();
-    if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
-    if (!res.ok) throw new Error(errText);
-    const data = JSON.parse(errText);
-    if (!data.num) throw new Error("База не выдала номер");
-    state.reserved = { key, num: data.num };
-    $("num").value = data.num;
-    fit($("num"));
-    return data.num;
+    }));
   }
   function rankDat(raw){
     const t = raw.trim();
@@ -304,7 +286,7 @@
     const roles = (C.roles||[]).filter(Boolean);
     const u = unit();
     const kind = state.kind === "pred" ? "Предупреждение" : "Выговор";
-    const num = (state.reserved && state.reserved.num) || $("num").value.trim();
+    const num = $("num").value.trim();
     const lines = [
       roles.map(r => `<@&${r}>`).join(" "),
       "Приказ № " + num,
@@ -348,9 +330,7 @@
       if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
       if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Приказ №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
-      state.reserved = null;
-      $("num").value = "";
-      fit($("num"));
+      numBox.sent();
       loadHistory();
     } catch (e) {
       status("Не отправилось: " + e.message, "err");

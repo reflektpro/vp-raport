@@ -24,6 +24,7 @@ export default {
     if (path === "/auth/client" && req.method === "GET") return authClient(env, cors);
     if (path === "/auth/discord" && req.method === "POST") return authDiscord(req, env, json, fail);
     if (path === "/paper" && req.method === "POST") return paperPost(req, env, json, fail);
+    if (path === "/suggest" && req.method === "GET") return suggestGet(req, env, url, cors, fail);
 
     if (req.method === "GET") {
       const passport = digits(new URL(req.url).searchParams.get("passport") || "");
@@ -36,26 +37,8 @@ export default {
     if (req.method !== "POST") return fail("Method not allowed", 405);
 
     const ctype = req.headers.get("content-type") || "";
-    if (ctype.includes("application/json")) {
-      let body = {};
-      try { body = await req.json(); } catch { return fail("Bad json", 400); }
-      const who = await requireUser(req, env, fail);
-      if (who.error) return who.error;
-      const passport = digits(body.passport || "");
-      if (passport.length < 3) return fail("Нужен номер паспорта", 400);
-      const kind = body.kind === "pred" ? "pred" : "vyg";
-      const ins = await env.DB.prepare(
-        "INSERT INTO orders (num, kind, passport, name, rank, unit_name, issued, reason) VALUES ('', ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(kind, passport, clip(body.name, 80), clip(body.rank, 40), clip(body.unit, 160), clip(body.issued, 40), clip(body.reason, 160)).run();
-      const id = ins.meta.last_row_id;
-      await env.DB.prepare(
-        "UPDATE orders SET num = (CASE kind WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END) || '-' || printf('%04d', id) WHERE id = ?"
-      ).bind(id).run();
-      const row = await env.DB.prepare("SELECT num FROM orders WHERE id = ?").bind(id).first();
-      const num = fixNum((row && row.num) || "");
-      await writeAudit(env, req, who.user, "order", kind, num);
-      return json({ num, id });
-    }
+    // Приказ (JSON): POST / или POST /order.
+    if (ctype.includes("application/json")) return orderPost(req, env, json, fail);
 
     let parts;
     try { parts = await readParts(req); }
@@ -417,6 +400,59 @@ async function wantNum(env, table, prefix, kind, id, raw) {
   if (dup) return { error: "Номер " + fixNum(row.want) + " уже занят", status: 409 };
   return { num: row.want };
 }
+// Те же префиксы с нумерованными параметрами: ?1 / ?2 — вид документа.
+const PAPER_PREFIX_1 = "(CASE ?1 WHEN 'raport' THEN char(1042,1055) WHEN 'promo' THEN char(1055,1042) WHEN 'week' THEN char(1054,1058) END)";
+const ORDER_PREFIX_2 = "(CASE ?2 WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END)";
+// Номер из поля сайта: «5», «0005», «ВГ-0005», «№ 5». Пусто — номер выдаёт база.
+function parseWant(raw) {
+  if (raw == null) return {};
+  const s = String(raw).trim();
+  if (!s) return {};
+  const m = /^\D{0,8}?(\d{1,6})\D{0,4}$/.exec(s);
+  const n = m ? Number(m[1]) : NaN;
+  if (!Number.isInteger(n) || n < 1 || n > 9999) return { error: "Номер — число от 1 до 9999" };
+  return { n };
+}
+function takenMsg(num) { return "Номер " + num + " уже занят. Впиши другой."; }
+// Полный номер собирает SQLite: префикс через char().
+async function numText(env, table, kind, n) {
+  const pre = table === "orders" ? "(CASE ?1 WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END)" : PAPER_PREFIX_1;
+  const row = await env.DB.prepare("SELECT " + pre + " || '-' || printf('%04d', ?2) AS num").bind(kind, n).first();
+  return fixNum((row && row.num) || "");
+}
+// Занят ли ровно этот номер (с учётом старых записей с испорченной кодировкой).
+async function numTaken(env, table, kind, n, want) {
+  const tail = "%-" + String(n).padStart(4, "0");
+  const rows = table === "orders"
+    ? await env.DB.prepare("SELECT num FROM orders WHERE num LIKE ?").bind(tail).all()
+    : await env.DB.prepare("SELECT num FROM papers WHERE kind = ? AND num LIKE ?").bind(kind, tail).all();
+  return (rows.results || []).some(r => fixNum(r.num) === want);
+}
+// Следующий свободный номер: счётчик + 1, занятые пропускаются. Приказы ВГ и ПР считаются вместе.
+async function nextFree(env, table, kind) {
+  let cur;
+  if (table === "orders") {
+    cur = await orderSeq(env);
+    if (!cur) {
+      const max = await env.DB.prepare("SELECT MAX(id) AS m FROM orders").first();
+      cur = Number((max && max.m) || 0);
+    }
+  } else {
+    const c = await env.DB.prepare("SELECT n FROM counters WHERE kind = ?").bind(kind).first();
+    cur = Number((c && c.n) || 0);
+  }
+  const rows = table === "orders"
+    ? await env.DB.prepare("SELECT num FROM orders").all()
+    : await env.DB.prepare("SELECT num FROM papers WHERE kind = ?").bind(kind).all();
+  const used = new Set();
+  for (const r of rows.results || []) {
+    const m = /-(\d+)$/.exec(fixNum(r.num));
+    if (m) used.add(Number(m[1]));
+  }
+  let n = cur + 1;
+  while (used.has(n)) n++;
+  return n >= 1 && n <= 9999 ? n : 0;
+}
 function authClient(env, cors) {
   return new Response(JSON.stringify({ clientId: env.DISCORD_CLIENT_ID || "" }), {
     status: 200,
@@ -497,21 +533,143 @@ async function paperPost(req, env, json, fail) {
   if (!kind) return fail("Не тот вид", 400);
   const who = await requireUser(req, env, fail);
   if (who.error) return who.error;
-  const name = clip(body.name, 80);
+  const w = parseWant(body.num);
+  if (w.error) return fail(w.error, 400);
+  const f = [clip(body.name, 80), digits(body.passport || ""), who.user.id, clip(who.user.username, 80), Math.floor(Date.now() / 1000)];
+  let row = null, n = 0;
+  try {
+    if (w.n) {
+      n = w.n;
+      const want = await numText(env, "papers", kind, n);
+      if (await numTaken(env, "papers", kind, n, want)) return fail(takenMsg(want), 409);
+      row = await paperInsert(env, kind, n, f);
+      if (!row) return fail(takenMsg(want), 409);
+    } else {
+      for (let i = 0; i < 5 && !row; i++) {
+        n = await nextFree(env, "papers", kind);
+        if (!n) return fail("Свободных номеров нет, впиши номер сам", 409);
+        row = await paperInsert(env, kind, n, f);
+      }
+    }
+  } catch (e) {
+    return fail("Номер не записался, попробуй ещё раз", 500);
+  }
+  if (!row || !row.num) return fail("Не выдался номер", 500);
+  const num = fixNum(row.num);
+  try {
+    // Счётчик только вверх: номер выше счётчика двигает его, номер из пропуска не трогает.
+    await env.DB.prepare(
+      "INSERT INTO counters (kind, n) VALUES (?1, ?2) ON CONFLICT(kind) DO UPDATE SET n = max(n, excluded.n)"
+    ).bind(kind, n).run();
+    await writeAudit(env, req, who.user, "paper", kind, num);
+  } catch (e) {}
+  return json({ num, id: row.id, digits: n });
+}
+// Одна запись без дубля: строка вставляется, только если такого номера этого вида ещё нет.
+async function paperInsert(env, kind, n, f) {
+  const want = PAPER_PREFIX_1 + " || '-' || printf('%04d', ?2)";
+  return env.DB.prepare(
+    "INSERT INTO papers (kind, num, name, passport, discord_id, discord_name, created) " +
+    "SELECT ?1, " + want + ", ?3, ?4, ?5, ?6, ?7 " +
+    "WHERE NOT EXISTS (SELECT 1 FROM papers WHERE kind = ?1 AND num = " + want + ") RETURNING id, num"
+  ).bind(kind, n, ...f).first();
+}
+async function orderPost(req, env, json, fail) {
+  let body = {};
+  try { body = await req.json(); } catch { return fail("Bad json", 400); }
+  const who = await requireUser(req, env, fail);
+  if (who.error) return who.error;
   const passport = digits(body.passport || "");
-  const cnt = await env.DB.prepare(
-    "INSERT INTO counters(kind, n) VALUES(?1, 1) ON CONFLICT(kind) DO UPDATE SET n = n + 1 RETURNING n"
-  ).bind(kind).first();
-  const n = cnt && Number(cnt.n);
-  if (!n) return fail("Не выдался номер", 500);
-  const now = Math.floor(Date.now() / 1000);
-  const ins = await env.DB.prepare(
-    "INSERT INTO papers (kind, num, name, passport, discord_id, discord_name, created) VALUES (?1, (CASE ?1 WHEN 'raport' THEN char(1042,1055) WHEN 'promo' THEN char(1055,1042) WHEN 'week' THEN char(1054,1058) END) || '-' || printf('%04d', ?2), ?3, ?4, ?5, ?6, ?7) RETURNING id, num"
-  ).bind(kind, n, name, passport, who.user.id, clip(who.user.username, 80), now).first();
-  if (!ins || !ins.num) return fail("Не выдался номер", 500);
-  const num = fixNum(ins.num);
-  await writeAudit(env, req, who.user, "paper", kind, num);
-  return json({ num, id: ins.id });
+  if (passport.length < 3) return fail("Нужен номер паспорта", 400);
+  const kind = body.kind === "pred" ? "pred" : "vyg";
+  const w = parseWant(body.num);
+  if (w.error) return fail(w.error, 400);
+  const f = [passport, clip(body.name, 80), clip(body.rank, 40), clip(body.unit, 160), clip(body.issued, 40), clip(body.reason, 160)];
+  let row = null, n = 0, seqBefore = 0;
+  try {
+    seqBefore = await orderSeq(env);
+    if (w.n) {
+      n = w.n;
+      const want = await numText(env, "orders", kind, n);
+      if (await numTaken(env, "orders", kind, n, want)) return fail(takenMsg(want), 409);
+      row = await orderInsert(env, kind, n, f);
+      if (!row) return fail(takenMsg(want), 409);
+    } else {
+      for (let i = 0; i < 5 && !row; i++) {
+        n = await nextFree(env, "orders", kind);
+        if (!n) return fail("Свободных номеров нет, впиши номер сам", 409);
+        row = await orderInsert(env, kind, n, f);
+      }
+    }
+  } catch (e) {
+    return fail("Номер не записался, попробуй ещё раз", 500);
+  }
+  if (!row || !row.num) return fail("Не выдался номер", 500);
+  const num = fixNum(row.num);
+  try {
+    await orderSeqAfter(env, Math.max(seqBefore, n), Number(row.id));
+    await writeAudit(env, req, who.user, "order", kind, num);
+  } catch (e) {}
+  return json({ num, id: row.id, digits: n });
+}
+// Строка приказа без дубля. id стараемся взять равным номеру (как раньше: номер = id);
+// если этот id занят записью с другим номером, база выдаёт id сама, номер остаётся выбранным.
+async function orderInsert(env, kind, n, f) {
+  const want = ORDER_PREFIX_2 + " || '-' || printf('%04d', ?3)";
+  for (const id of [n, null]) {
+    const row = await env.DB.prepare(
+      "INSERT OR IGNORE INTO orders (id, num, kind, passport, name, rank, unit_name, issued, reason) " +
+      "SELECT ?1, " + want + ", ?2, ?4, ?5, ?6, ?7, ?8, ?9 " +
+      "WHERE NOT EXISTS (SELECT 1 FROM orders WHERE num = " + want + ") RETURNING id, num"
+    ).bind(id, kind, n, ...f).first();
+    if (row) return row;
+    // Не вставилось: либо номер уже занят (дубль, отказ), либо занят только id (пробуем id от базы).
+    const dup = await env.DB.prepare(
+      "SELECT id FROM orders WHERE num = (CASE ?1 WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END) || '-' || printf('%04d', ?2)"
+    ).bind(kind, n).first();
+    if (dup) return null;
+  }
+  return null;
+}
+// Следующий номер приказа живёт в sqlite_sequence (его же правит /admin/seq).
+async function orderSeq(env) {
+  const seq = await env.DB.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'orders'").first();
+  return Number((seq && seq.seq) || 0);
+}
+// После вставки счётчик = max(было, выбранный номер). Если id выдала сама база и он ушёл выше, возвращаем.
+async function orderSeqAfter(env, target, newId) {
+  const now = await orderSeq(env);
+  if (now === newId && newId > target) {
+    await env.DB.prepare("UPDATE sqlite_sequence SET seq = ?1 WHERE name = 'orders' AND seq = ?2").bind(target, newId).run();
+  } else if (now < target) {
+    const upd = await env.DB.prepare("UPDATE sqlite_sequence SET seq = ?1 WHERE name = 'orders' AND seq < ?1").bind(target).run();
+    if (!upd.meta || !upd.meta.changes) {
+      const has = await env.DB.prepare("SELECT 1 AS x FROM sqlite_sequence WHERE name = 'orders'").first();
+      if (!has) await env.DB.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('orders', ?)").bind(target).run();
+    }
+  }
+}
+// Только предложение: следующий свободный номер и префикс. Ничего не записывает и не занимает.
+async function suggestGet(req, env, url, cors, fail) {
+  const who = await requireUser(req, env, fail);
+  if (who.error) return who.error;
+  const k = String(url.searchParams.get("kind") || "");
+  const t = String(url.searchParams.get("type") || "");
+  let table, kind;
+  if (k === "order" || k === "pred" || k === "vyg") { table = "orders"; kind = (k === "pred" || t === "pred") ? "pred" : "vyg"; }
+  else if (PAPER_KINDS.includes(k)) { table = "papers"; kind = k; }
+  else return fail("Не тот вид", 400);
+  try {
+    const n = await nextFree(env, table, kind);
+    if (!n) return fail("Свободных номеров нет, впиши номер сам", 409);
+    const num = await numText(env, table, kind, n);
+    return new Response(JSON.stringify({ num, digits: n }), {
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
+    });
+  } catch (e) {
+    return fail("База номеров недоступна", 500);
+  }
 }
 async function writeAudit(env, req, user, action, kind, num) {
   const ip = req.headers.get("CF-Connecting-IP") || "";

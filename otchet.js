@@ -23,8 +23,6 @@
   $("city").textContent = C.city || "Москва";
   const now = new Date();
   $("date").value = `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()} г.`;
-  $("num").value = "";
-  $("num").readOnly = true;
   SAVED.forEach(id => { const v = localStorage.getItem("vp_"+id); if (v) $(id).value = v; });
 
   const weekAgo = new Date(now); weekAgo.setDate(now.getDate()-6);
@@ -283,43 +281,22 @@
     });
   }
 
-  const paper = { reserved: null };
   function personKey(){ return $("fromName").value.trim() + "|" + $("staticId").value.trim(); }
   function authHead(extra){
     const h = extra ? Object.assign({}, extra) : {};
     h.Authorization = "Bearer " + ((window.VP_SESSION && window.VP_SESSION()) || "");
     return h;
   }
-  function dropPaper(){
-    const key = personKey();
-    if (!paper.reserved || paper.reserved.key !== key) {
-      paper.reserved = null;
-      $("num").value = "";
-      fit($("num"));
-    }
-  }
+  // Номер: база предлагает следующий, поле можно править; занятый номер база не примет (409).
+  const numBox = window.VP_NUM({ el: $("num"), kind: () => "week", person: personKey, fit });
+  function dropPaper(){ numBox.changed(); }
   async function takePaper(){
-    const key = personKey();
-    if (paper.reserved && paper.reserved.key === key && paper.reserved.num) {
-      $("num").value = paper.reserved.num;
-      fit($("num"));
-      return paper.reserved.num;
-    }
     if (!C.endpoint) throw new Error("База номеров не подключена");
-    const res = await fetch(String(C.endpoint).replace(/\/$/, "") + "/paper", {
+    return numBox.take(raw => fetch(String(C.endpoint).replace(/\/$/, "") + "/paper", {
       method: "POST",
       headers: authHead({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ kind: "week", name: $("fromName").value.trim(), passport: "" })
-    });
-    const errText = await res.text();
-    if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
-    if (!res.ok) throw new Error(errText || "Номер не выдан");
-    const data = JSON.parse(errText);
-    if (!data.num) throw new Error("База не выдала номер");
-    paper.reserved = { key, num: data.num };
-    $("num").value = data.num;
-    fit($("num"));
-    return data.num;
+      body: JSON.stringify({ kind: "week", num: raw, name: $("fromName").value.trim(), passport: "" })
+    }));
   }
 
   function validate(){
@@ -353,9 +330,7 @@
       if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
       if (!res.ok) throw new Error(`${res.status} ${errText}`);
       status(`Отчёт №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
-      paper.reserved = null;
-      $("num").value = "";
-      fit($("num"));
+      numBox.sent();
     } catch (e) { status("Не отправилось: " + e.message, "err"); } finally { busy(false); }
   });
   $("download").addEventListener("click", async () => {
