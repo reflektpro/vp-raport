@@ -129,14 +129,14 @@
   updateSignature();
 
   // ---------- проверка ----------
-  const YT = /^(https?:\/\/)?(www\.|m\.)?(youtube\.com\/(watch\?v=|shorts\/|live\/)|youtu\.be\/)[\w-]{6,}/i;
+  const LINK = /^(https?:\/\/)?[^\s\/.]+(\.[^\s\/.]+)+(\/\S*)?$/i;
   function validate(){
     let ok = true, first = null;
     document.querySelectorAll(".f.req").forEach(el => {
       if (!el.value.trim()){ el.classList.add("bad"); ok = false; first = first || el; }
     });
     const bc = $("bodycam");
-    if (bc.value.trim() && !YT.test(bc.value.trim())){ bc.classList.add("bad"); ok = false; first = first || bc; status("Ссылка на боди-камеру должна вести на YouTube.", "err"); }
+    if (bc.value.trim() && !LINK.test(bc.value.trim())){ bc.classList.add("bad"); ok = false; first = first || bc; status("Это не похоже на ссылку. Вставь адрес видео целиком.", "err"); }
     else if (!ok) status("Заполни подсвеченные красным поля.", "err");
     if (first) first.focus();
     return ok;
@@ -154,7 +154,7 @@
           const s = doc.createElement("span");
           let v = el.value.trim();
           if (el.id === "fromName" && n) v = n.short;
-          if (el.id === "bodycam") v = v.replace(/^https?:\/\/(www\.)?/, "");
+          if (el.id === "bodycam") { el.remove(); return; }
           if (el.id === "tRank") v = v.toLowerCase();
           s.textContent = v; el.replaceWith(s);
         });
@@ -164,6 +164,7 @@
           const tv = el.value.trim(); d.textContent = el.id === "proof" ? cap(tv) : (tv || "—"); el.replaceWith(d);
         });
         const hasBc = !!$("bodycam").value.trim(), hasPr = !!$("proof").value.trim();
+        p.querySelectorAll(".bc-colon").forEach(e => e.remove());
         if (!hasBc) doc.getElementById("appendixRow").remove();
         if (!hasPr) doc.getElementById("appendixRow2").remove();
         else if (!hasBc) doc.getElementById("app2num").textContent = "1.";
