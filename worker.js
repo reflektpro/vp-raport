@@ -20,7 +20,7 @@ export default {
       const passport = digits(new URL(req.url).searchParams.get("passport") || "");
       if (passport.length < 3) return fail("Нужен номер паспорта", 400);
       const rows = await env.DB.prepare(
-        "SELECT num, kind, name, rank, unit_name AS unit, issued FROM orders WHERE passport = ? ORDER BY id"
+        "SELECT num, kind, name, rank, unit_name AS unit, issued, reason FROM orders WHERE passport = ? ORDER BY id"
       ).bind(passport).all();
       return json({ orders: (rows.results || []).map(o => ({ ...o, num: fixNum(o.num) })) });
     }
@@ -33,13 +33,15 @@ export default {
       const passport = digits(body.passport || "");
       if (passport.length < 3) return fail("Нужен номер паспорта", 400);
       const kind = body.kind === "pred" ? "pred" : "vyg";
-      const prefix = kind === "pred" ? String.fromCharCode(0x41F, 0x420) : String.fromCharCode(0x412, 0x413);
       const ins = await env.DB.prepare(
-        "INSERT INTO orders (num, kind, passport, name, rank, unit_name, issued) VALUES ('', ?, ?, ?, ?, ?, ?)"
-      ).bind(kind, passport, clip(body.name, 80), clip(body.rank, 40), clip(body.unit, 160), clip(body.issued, 40)).run();
+        "INSERT INTO orders (num, kind, passport, name, rank, unit_name, issued, reason) VALUES ('', ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(kind, passport, clip(body.name, 80), clip(body.rank, 40), clip(body.unit, 160), clip(body.issued, 40), clip(body.reason, 160)).run();
       const id = ins.meta.last_row_id;
-      const num = prefix + "-" + String(id).padStart(4, "0");
-      await env.DB.prepare("UPDATE orders SET num = ? WHERE id = ?").bind(num, id).run();
+      await env.DB.prepare(
+        "UPDATE orders SET num = (CASE kind WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END) || '-' || printf('%04d', id) WHERE id = ?"
+      ).bind(id).run();
+      const row = await env.DB.prepare("SELECT num FROM orders WHERE id = ?").bind(id).first();
+      const num = fixNum((row && row.num) || "");
       return json({ num, id });
     }
 

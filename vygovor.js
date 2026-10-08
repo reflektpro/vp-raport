@@ -46,7 +46,14 @@
     updateSignature();
   });
 
+  function growPos(){
+    const el = $("fromPos");
+    el.style.height = "auto";
+    el.style.height = Math.max(el.scrollHeight, 24) + "px";
+  }
+  growPos();
   document.querySelectorAll(".sign .f").forEach(el => el.addEventListener("input", () => {
+    if (el.id === "fromPos") growPos();
     el.classList.remove("bad");
     if (SAVED.includes(el.id)) localStorage.setItem("vp_"+el.id, el.value.trim());
     if (["fromRank","fromName"].includes(el.id)) updateSignature();
@@ -103,7 +110,8 @@
       }
       const lines = orders.map(o => {
         const kind = o.kind === "pred" ? "Предупреждение" : "Выговор";
-        return `<li><b>${esc(o.num)}</b> ${esc(kind)}${o.issued ? ", " + esc(o.issued) : ""}${o.unit ? " · " + esc(o.unit) : ""}</li>`;
+        const why = o.reason ? " · ст. " + esc(o.reason) : "";
+        return `<li><b>${esc(o.num)}</b> ${esc(kind)}${o.issued ? ", " + esc(o.issued) : ""}${why}</li>`;
       }).join("");
       box.className = "hist repeat";
       box.innerHTML = `<b>Повторное.</b> По паспорту уже есть:<ol>${lines}</ol>`;
@@ -131,7 +139,8 @@
         name: $("tName").value.trim(),
         rank: $("tRank").value.trim(),
         unit: u ? u.name : "",
-        issued: $("date").value.trim()
+        issued: $("date").value.trim(),
+        reason: points().join(", ")
       })
     });
     if (!res.ok) throw new Error(await res.text());
@@ -264,10 +273,17 @@
       scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false,
       onclone: doc => {
         const p = doc.getElementById("paper"); p.classList.add("rendering");
-        p.querySelectorAll("input.f").forEach(el => {
+        p.querySelectorAll("input.f, textarea.f").forEach(el => {
           const s = doc.createElement("span");
           let v = el.value.trim();
           if (el.id === "fromName" && n) v = n.short;
+          if (el.id === "fromPos") {
+            s.style.display = "block";
+            s.style.whiteSpace = "normal";
+            s.style.maxWidth = "250px";
+            s.style.lineHeight = "1.25";
+            s.style.wordBreak = "break-word";
+          }
           s.textContent = v; el.replaceWith(s);
         });
         if (!$("stampOn").checked) doc.getElementById("stamp").remove();
