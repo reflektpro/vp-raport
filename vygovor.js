@@ -57,7 +57,7 @@
     refill();
   }));
   $("unit").addEventListener("change", () => { persist(); refill(); });
-  ["nPoint","nPart","nChapter"].forEach(id => $(id).addEventListener("input", () => { $(id).classList.remove("bad"); refill(); }));
+  $("nPoint").addEventListener("input", () => { $("nPoint").classList.remove("bad"); refill(); });
   $("kind").addEventListener("click", e => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -149,10 +149,10 @@
   }
   function pointPhrase(){
     const ps = points();
-    if (!ps.length) return "пунктом ___";
-    if (ps.length === 1) return "пунктом " + ps[0];
-    if (ps.length === 2) return "пунктами " + ps[0] + " и " + ps[1];
-    return "пунктами " + ps.slice(0, -1).join(", ") + " и " + ps[ps.length - 1];
+    if (!ps.length) return "статьёй ___";
+    if (ps.length === 1) return "статьёй " + ps[0];
+    if (ps.length === 2) return "статьями " + ps[0] + " и " + ps[1];
+    return "статьями " + ps.slice(0, -1).join(", ") + " и " + ps[ps.length - 1];
   }
   function refill(){
     document.querySelectorAll("#kind button").forEach(b => b.classList.toggle("on", b.dataset.kind === state.kind));
@@ -161,8 +161,6 @@
     $("nameShow").textContent = $("tName").value.trim() || "________";
     $("passShow").textContent = $("tPass").value.trim() || "______";
     $("normPoints").textContent = pointPhrase();
-    $("normPart").textContent = $("nPart").value.trim() || "___";
-    $("normChapter").textContent = $("nChapter").value.trim() || "___";
     const list = items();
     const html = list.map(esc).map(t => `<li>${t}</li>`).join("");
     $("workList").innerHTML = html;
@@ -243,7 +241,7 @@
 
   function validate(){
     let ok = true, first = null;
-    ["tRank","tName","tPass","fromPos","fromRank","fromName","nPart","nChapter"].forEach(id => {
+    ["tRank","tName","tPass","fromPos","fromRank","fromName"].forEach(id => {
       const el = $(id);
       if (!el.value.trim()){ el.classList.add("bad"); ok = false; first = first || el; }
     });
@@ -283,7 +281,7 @@
       `**Подразделение:** ${u ? u.name : ""}`,
       `**Кому:** ${$("tRank").value.trim()} ${$("tName").value.trim()} | паспорт ${$("tPass").value.trim()}`,
       `**От:** ${$("fromPos").value.trim()}, ${$("fromRank").value.trim()} ${$("fromName").value.trim()}`,
-      `**Норма:** ${pointPhrase()} части ${$("nPart").value.trim()} главы ${$("nChapter").value.trim()} Дисциплинарного устава`,
+      `**Норма:** ${pointPhrase()} Дисциплинарного устава`,
       `**Отработка:** ${items().join("; ")}`
     ];
     return {
