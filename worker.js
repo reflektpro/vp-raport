@@ -22,7 +22,7 @@ export default {
       const rows = await env.DB.prepare(
         "SELECT num, kind, name, rank, unit_name AS unit, issued FROM orders WHERE passport = ? ORDER BY id"
       ).bind(passport).all();
-      return json({ orders: rows.results || [] });
+      return json({ orders: (rows.results || []).map(o => ({ ...o, num: fixNum(o.num) })) });
     }
     if (req.method !== "POST") return fail("Method not allowed", 405);
 
@@ -33,7 +33,7 @@ export default {
       const passport = digits(body.passport || "");
       if (passport.length < 3) return fail("Нужен номер паспорта", 400);
       const kind = body.kind === "pred" ? "pred" : "vyg";
-      const prefix = kind === "pred" ? "ПР" : "ВГ";
+      const prefix = kind === "pred" ? String.fromCharCode(0x41F, 0x420) : String.fromCharCode(0x412, 0x413);
       const ins = await env.DB.prepare(
         "INSERT INTO orders (num, kind, passport, name, rank, unit_name, issued) VALUES ('', ?, ?, ?, ?, ?, ?)"
       ).bind(kind, passport, clip(body.name, 80), clip(body.rank, 40), clip(body.unit, 160), clip(body.issued, 40)).run();
@@ -84,6 +84,29 @@ export default {
   }
 };
 
+function fixNum(s) {
+  s = String(s || "");
+  const ok = (str) => {
+    const m = /^(.{2})-(\d+)$/.exec(str);
+    if (!m) return false;
+    for (const ch of m[1]) {
+      const c = ch.codePointAt(0);
+      if (c < 0x410 || c > 0x42F) return false;
+    }
+    return true;
+  };
+  if (ok(s)) return s;
+  const bytes = [];
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (c > 255) return s;
+    bytes.push(c);
+  }
+  let t;
+  try { t = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes)); }
+  catch { return s; }
+  return ok(t) ? t : s;
+}
 function digits(s) { return String(s || "").replace(/\D/g, ""); }
 function clip(s, n) { return String(s || "").trim().slice(0, n); }
 
