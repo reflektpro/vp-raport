@@ -69,7 +69,12 @@
   });
 
   function unit(){ return UNITS.find(u => u.id === $("unit").value) || UNITS[0]; }
-  function items(){ const u = unit(); return (u && u[state.kind]) || []; }
+  function items(){
+    const u = unit();
+    if (!u) return [];
+    if (u.id === "va" && /^рядов/i.test($("tRank").value.trim())) return u[state.kind + "Private"] || [];
+    return u[state.kind] || [];
+  }
   function persist(){ localStorage.setItem("vp_vyg", JSON.stringify({ kind: state.kind, unit: $("unit").value })); }
   function digits(s){ return String(s || "").replace(/\D/g, ""); }
   function dropNumber(){
