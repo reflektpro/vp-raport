@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ГУ ВП · Рапорт на повышение</title>
+<title>ГУ ВП · Еженедельный отчёт</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Tinos:ital,wght@0,400;0,700;1,400&family=Oswald:wght@400;600&display=swap" rel="stylesheet">
@@ -14,9 +14,9 @@
   <img src="emblem.png" alt="">
   <div>
     <div class="t1">ГЛАВНОЕ УПРАВЛЕНИЕ ВОЕННОЙ ПОЛИЦИИ</div>
-    <div class="t2">Электронный рапорт на повышение</div>
+    <div class="t2">Еженедельный отчёт</div>
   </div>
-  <nav class="tabs"><a href="index.html">На взыскание</a><a href="povyshenie.html" class="on">На повышение</a><a href="otchet.html">Отчёт</a></nav>
+  <nav class="tabs"><a href="index.html">На взыскание</a><a href="povyshenie.html">На повышение</a><a href="otchet.html" class="on">Отчёт</a></nav>
 </header>
 
 <main class="layout">
@@ -25,8 +25,8 @@
       <div class="emblem"><img src="emblem.png" alt=""></div>
       <div class="hdr" id="hdr"></div>
 
-      <h1 class="title">Р А П О Р Т</h1>
-      <div class="subtitle">О повышении в воинском звании</div>
+      <h1 class="title">О Т Ч Ё Т</h1>
+      <div class="subtitle">О проделанной работе за неделю</div>
       <div class="meta">
         <input class="f" id="date" data-fit>
         <span id="city"></span>
@@ -34,17 +34,12 @@
       </div>
       <div class="rule"></div>
 
-      <p class="para">Я, <span class="calc" id="nameInText">________</span>, проходящий службу в Военной полиции на должности
-        <span class="calc" id="posInText">________</span> в звании <span class="calc" id="rankInText">________</span>,
-        прошу рассмотреть возможность моего повышения в звании до
-        <input class="f req" id="target" data-fit placeholder="звание" list="ranks" autocomplete="off">.</p>
+      <p class="para">Я, <span class="calc" id="nameInText">________</span>, <span class="calc" id="posInText">________</span>
+        в звании <span class="calc" id="rankInText">________</span>, статик №<span class="calc" id="staticInText">____</span>,
+        в промежуток времени от <span class="calc" id="fromText">ДД.ММ.ГГГГ</span> до <span class="calc" id="toText">ДД.ММ.ГГГГ</span>
+        выполнил следующую работу:</p>
 
-      <p class="para"><b>Мои достижения за период службы:</b></p>
-      <ol class="items" id="achList"></ol>
-      <div class="extra-wrap"><textarea class="f" id="extra" rows="1" placeholder="дополнительно (необязательно): другие заслуги своими словами"></textarea></div>
-      <p class="para" id="summary"></p>
-
-      <p class="para">Прошу уведомить о принятом решении в установленном порядке.</p>
+      <ol class="items" id="workList"></ol>
 
       <div class="appendix" id="appendix">
         <b>Приложение:</b>
@@ -54,7 +49,7 @@
       <div class="sign">
         <div class="sign-left">
           <input class="f req" id="fromPos" data-fit placeholder="должность" list="positions" autocomplete="off">
-          <input class="f req" id="fromRank" data-fit placeholder="текущее звание" list="ranks" autocomplete="off">
+          <input class="f req" id="fromRank" data-fit placeholder="звание" list="ranks" autocomplete="off">
         </div>
         <div class="sign-mid">
           <img id="stamp" alt="">
@@ -62,6 +57,7 @@
         </div>
         <div class="sign-right">
           <input class="f req" id="fromName" data-fit placeholder="Имя Фамилия">
+          <div class="static-line">статик № <input class="f req" id="staticId" data-fit placeholder="0000"></div>
           <div class="sign-hint">подпись появится сама</div>
         </div>
       </div>
@@ -69,20 +65,20 @@
   </section>
 
   <aside class="panel calc-panel">
-    <h2>Калькулятор повышения</h2>
-    <div class="route" id="route">Укажи текущее звание внизу бланка</div>
-    <div class="bar"><div class="bar-fill" id="barFill"></div><span id="barText">0 баллов</span></div>
-    <ul class="crit" id="crit"></ul>
-    <div class="crit-note" id="critNote"></div>
-
-    <h3>Что сделано</h3>
-    <div class="acts-hint">Жми «+» за каждое выполненное дело и вставляй ссылки на доказательства, по одной на строку. Если ссылок больше, чем отмечено, счётчик подтянется сам.</div>
+    <h2>За неделю</h2>
+    <div class="week-dates">
+      <input type="date" id="fromDate">
+      <span>—</span>
+      <input type="date" id="toDate">
+    </div>
+    <div class="acts-hint">Жми «+» за каждое дело и вставляй ссылки на доказательства, по одной на строку. В документ ссылки не попадают: они уходят в сообщение, в скобки после названия.</div>
     <div id="acts"></div>
+    <div class="vygovor-note ok" id="vygNote">Выговор, который ты уже выдал рапортом на взыскание, второй раз не считается. Оставь что-то одно: либо рапорт, либо выговор.</div>
 
     <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
-    <button class="btn primary" id="send">Отправить рапорт</button>
+    <button class="btn primary" id="send">Отправить отчёт</button>
     <button class="btn" id="download">Скачать PNG</button>
-    <button class="btn ghost" id="clear">Обнулить достижения</button>
+    <button class="btn ghost" id="clear">Обнулить неделю</button>
     <div class="status" id="status"></div>
   </aside>
 </main>
@@ -98,8 +94,7 @@
 </datalist>
 
 <script src="config.js"></script>
-<script src="promo-rules.js"></script>
 <script src="html2canvas.min.js"></script>
-<script src="povyshenie.js"></script>
+<script src="otchet.js"></script>
 </body>
 </html>
