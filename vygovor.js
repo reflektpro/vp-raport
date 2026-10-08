@@ -42,7 +42,8 @@
     el.style.width = Math.ceil(w + 12) + "px";
   }
   document.querySelectorAll("input[data-fit]").forEach(el => { fit(el); el.addEventListener("input", () => fit(el)); });
-  // Номер: база предлагает следующий, поле можно править; занятый номер база не примет (409).
+  // Номер: база предлагает следующий, поле можно править. Занятый номер тоже записывается —
+  // с предупреждением в строке статуса (дубль разрешён нарочно), PNG и Discord берут этот номер.
   const numBox = window.VP_NUM({
     el: $("num"), kind: () => "order", type: () => state.kind,
     person: () => digits($("tPass").value) + "|" + state.kind, fit
@@ -311,7 +312,7 @@
     busy(true); status("Беру номер…");
     try {
       await takeNumber();
-      status("Печатаю бланк…");
+      numStatus("Печатаю бланк…");
       const canvas = await renderPNG();
       const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
       const fd = new FormData();
@@ -320,7 +321,7 @@
       fd.append("files[0]", new File([blob], "prikaz.png", { type: "image/png" }));
       fd.append("kind", state.kind);
       fd.append("num", $("num").value.trim());
-      status("Отправляю в Discord…");
+      numStatus("Отправляю в Discord…");
       const res = await fetch(target, {
         method: "POST",
         body: fd,
@@ -329,7 +330,7 @@
       const errText = await res.text();
       if (res.status === 403) throw new Error(errText || "Сначала войди через Discord");
       if (!res.ok) throw new Error(`${res.status} ${errText}`);
-      status(`Приказ №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
+      numStatus(`Приказ №${$("num").value} отправлен. Руководство уведомлено.`, "ok");
       numBox.sent();
       loadHistory();
     } catch (e) {
@@ -342,13 +343,13 @@
     busy(true); status("Беру номер…");
     try {
       await takeNumber();
-      status("Печатаю бланк…");
+      numStatus("Печатаю бланк…");
       const canvas = await renderPNG();
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = `prikaz_${$("num").value.replace(/[^\wА-я-]/g,"_")}.png`;
       a.click();
-      status("Картинка скачана.", "ok");
+      numStatus("Картинка скачана.", "ok");
     } catch (e) { status("Ошибка: " + e.message, "err"); } finally { busy(false); }
   });
 
@@ -376,6 +377,8 @@
   window.__vp = { renderPNG, buildPayload, state, items };
   function busy(b){ ["send","download"].forEach(id => $(id).disabled = b); }
   function status(t, cls){ const s = $("status"); s.textContent = t; s.className = "status " + (cls||""); }
+  // Статус после записи номера: если номер уже был у другого документа, показываем предупреждение (не ошибку).
+  function numStatus(t, cls){ const w = numBox.warning ? numBox.warning() : ""; status(w ? numBox.note(t) : t, w ? "warn" : cls); }
   function pad(n){ return String(n).padStart(2,"0"); }
   function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
   function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }

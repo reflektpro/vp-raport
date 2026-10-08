@@ -1,12 +1,13 @@
 // Номер документа: база только предлагает следующий свободный, боец может вписать свой.
 // Предложение ничего не занимает; номер записывается в базу при «Скачать PNG» или «Отправить».
-// Если номер уже занят, база отвечает 409, поле получает свежее предложение, остальной бланк не трогается.
+// Занятый номер тоже записывается (дубль разрешён нарочно: опечатку проще удалить в админке, чем писать
+// отменяющий приказ). База отвечает предупреждением, страница его показывает и продолжает с этим номером.
 (() => {
   window.VP_NUM = function (opt) {
     const C = window.VP_CONFIG || {};
     const base = String(C.endpoint || "").replace(/\/$/, "");
     const el = opt.el;
-    const st = { edited: false, suggested: "", saved: null, ask: 0 };
+    const st = { edited: false, suggested: "", saved: null, ask: 0, warning: "" };
     el.readOnly = false;
     el.removeAttribute("readonly");
     if (!el.placeholder) el.placeholder = "по порядку";
@@ -62,21 +63,18 @@
       const key = opt.person();
       const val = el.value.trim();
       if (st.saved && st.saved.key === key && val === st.saved.num) return st.saved.num;
+      st.warning = "";
       const res = await post(val);
       const text = await res.text();
       if (res.status === 403) throw new Error(text || "Сначала войди через Discord");
-      if (res.status === 409) {
-        st.edited = false;
-        await refresh(true);
-        el.classList.add("bad");
-        throw new Error((text || "Номер уже занят.") + (el.value.trim() ? " Свободный: " + el.value.trim() + "." : ""));
-      }
       if (res.status === 400) { el.classList.add("bad"); throw new Error(text || "Номер не принят"); }
       if (!res.ok) throw new Error(text || "Номер не выдан");
       let data = {};
       try { data = JSON.parse(text); } catch (e) { data = {}; }
       if (!data.num) throw new Error("База не выдала номер");
       st.saved = { key, num: String(data.num) };
+      // Номер уже был у другого документа: не ошибка, только предупреждение. Номер остаётся этим.
+      st.warning = data.warning ? String(data.warning) : "";
       st.suggested = "";
       st.edited = false;
       el.value = st.saved.num;
@@ -87,13 +85,18 @@
     // Только после успешной отправки в Discord: поле очищается и получает следующее предложение.
     function sent() {
       st.saved = null;
+      st.warning = "";
       st.edited = false;
       st.suggested = "";
       el.value = "";
       fitIt();
       refresh(true);
     }
+    // Предупреждение о дубле для записанного номера ("" — номер был свободен).
+    function warning() { return holdsSaved() ? st.warning : ""; }
+    // Текст для строки статуса: к сообщению добавляется предупреждение, если оно есть.
+    function note(text) { const w = warning(); return w ? (text ? text + " " : "") + "⚠ " + w : text; }
     refresh(true);
-    return { refresh, changed, take, sent, state: st };
+    return { refresh, changed, take, sent, warning, note, state: st };
   };
 })();

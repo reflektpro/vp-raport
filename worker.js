@@ -226,7 +226,8 @@ async function adminRoute(req, env, url, json, fail, cors) {
         "UPDATE orders SET kind = ?, passport = ?, name = ?, rank = ?, unit_name = ?, issued = ?, reason = ?, num = COALESCE(?, num) WHERE id = ?"
       ).bind(kind, digits(b.passport), clip(b.name, 80), clip(b.rank, 40), clip(b.unit, 160), clip(b.issued, 40), clip(b.reason, 160), re.num, id).run();
       const row = await env.DB.prepare("SELECT num FROM orders WHERE id = ?").bind(id).first();
-      return json({ ok: true, num: fixNum((row && row.num) || "") });
+      const num = fixNum((row && row.num) || "");
+      return json(withWarn({ ok: true, num }, re.num && await numDup(env, "orders", kind, num, id), num));
     }
     if (path === "/admin/orders" && req.method === "DELETE") {
       const id = Number(url.searchParams.get("id"));
@@ -275,7 +276,8 @@ async function adminRoute(req, env, url, json, fail, cors) {
         "UPDATE papers SET name = ?, passport = ?, rank = ?, note = ?, edited = ?, num = COALESCE(?, num) WHERE id = ?"
       ).bind(clip(b.name, 80), digits(b.passport).slice(0, 20), clip(b.rank, 40), clip(b.note, 300), now, re.num, id).run();
       const row = await env.DB.prepare("SELECT num FROM papers WHERE id = ?").bind(id).first();
-      return json({ ok: true, num: fixNum((row && row.num) || "") });
+      const num = fixNum((row && row.num) || "");
+      return json(withWarn({ ok: true, num }, re.num && await numDup(env, "papers", String(cur.kind || ""), num, id), num));
     }
     if (path === "/admin/papers" && req.method === "DELETE") {
       await ensure(env);
@@ -384,7 +386,8 @@ const PAPER_KINDS = ["raport", "promo", "week"];
 const PAPER_PREFIX = "(CASE ? WHEN 'raport' THEN char(1042,1055) WHEN 'promo' THEN char(1055,1042) WHEN 'week' THEN char(1054,1058) END)";
 const ORDER_PREFIX = "(CASE ? WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END)";
 // Новый номер одной записи, только если админ явно вписал цифры. Пусто — номер не трогаем.
-// Другие записи не перенумеровываются; занятый номер того же вида не даём.
+// Другие записи не перенумеровываются. Занятый номер того же вида тоже можно: дубль разрешён нарочно
+// (опечатку проще удалить, чем писать отменяющий приказ), в ответе будет предупреждение.
 async function wantNum(env, table, prefix, kind, id, raw) {
   const s = digits(raw == null ? "" : raw);
   if (!s) return { num: null };
@@ -396,8 +399,6 @@ async function wantNum(env, table, prefix, kind, id, raw) {
   if (!row) return { error: "Нет записи", status: 404 };
   if (!row.want) return { error: "Не тот вид", status: 400 };
   if (fixNum(row.cur) === fixNum(row.want)) return { num: null };
-  const dup = await env.DB.prepare("SELECT id FROM " + table + " WHERE id <> ? AND num = ?").bind(id, row.want).first();
-  if (dup) return { error: "Номер " + fixNum(row.want) + " уже занят", status: 409 };
   return { num: row.want };
 }
 // Те же префиксы с нумерованными параметрами: ?1 / ?2 — вид документа.
@@ -413,20 +414,30 @@ function parseWant(raw) {
   if (!Number.isInteger(n) || n < 1 || n > 9999) return { error: "Номер — число от 1 до 9999" };
   return { n };
 }
-function takenMsg(num) { return "Номер " + num + " уже занят. Впиши другой."; }
+// Номер уже есть у другой записи: не отказ, а предупреждение. Дубли разрешены нарочно.
+function dupMsg(num) { return "Номер " + num + " уже есть. Если это опечатка, удали лишний в админке."; }
+function withWarn(obj, dup, num) {
+  if (dup) obj.warning = dupMsg(num);
+  return obj;
+}
 // Полный номер собирает SQLite: префикс через char().
 async function numText(env, table, kind, n) {
   const pre = table === "orders" ? "(CASE ?1 WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END)" : PAPER_PREFIX_1;
   const row = await env.DB.prepare("SELECT " + pre + " || '-' || printf('%04d', ?2) AS num").bind(kind, n).first();
   return fixNum((row && row.num) || "");
 }
-// Занят ли ровно этот номер (с учётом старых записей с испорченной кодировкой).
-async function numTaken(env, table, kind, n, want) {
-  const tail = "%-" + String(n).padStart(4, "0");
-  const rows = table === "orders"
-    ? await env.DB.prepare("SELECT num FROM orders WHERE num LIKE ?").bind(tail).all()
-    : await env.DB.prepare("SELECT num FROM papers WHERE kind = ? AND num LIKE ?").bind(kind, tail).all();
-  return (rows.results || []).some(r => fixNum(r.num) === want);
+// Есть ли этот номер у другой записи (с учётом старых записей с испорченной кодировкой).
+// Проверяется после записи, поэтому видны и два одновременных бланка с одним номером.
+async function numDup(env, table, kind, num, id) {
+  const m = /-(\d+)$/.exec(String(num || ""));
+  if (!m) return false;
+  const tail = "%-" + m[1];
+  try {
+    const rows = table === "orders"
+      ? await env.DB.prepare("SELECT num FROM orders WHERE num LIKE ? AND id <> ?").bind(tail, id).all()
+      : await env.DB.prepare("SELECT num FROM papers WHERE kind = ? AND num LIKE ? AND id <> ?").bind(kind, tail, id).all();
+    return (rows.results || []).some(r => fixNum(r.num) === num);
+  } catch (e) { return false; }
 }
 // Следующий свободный номер: счётчик + 1, занятые пропускаются. Приказы ВГ и ПР считаются вместе.
 async function nextFree(env, table, kind) {
@@ -539,16 +550,14 @@ async function paperPost(req, env, json, fail) {
   let row = null, n = 0;
   try {
     if (w.n) {
+      // Номер вписан руками: пишем как есть, даже если он уже занят (дубль разрешён, будет предупреждение).
       n = w.n;
-      const want = await numText(env, "papers", kind, n);
-      if (await numTaken(env, "papers", kind, n, want)) return fail(takenMsg(want), 409);
-      row = await paperInsert(env, kind, n, f);
-      if (!row) return fail(takenMsg(want), 409);
+      row = await paperInsert(env, kind, n, f, true);
     } else {
       for (let i = 0; i < 5 && !row; i++) {
         n = await nextFree(env, "papers", kind);
         if (!n) return fail("Свободных номеров нет, впиши номер сам", 409);
-        row = await paperInsert(env, kind, n, f);
+        row = await paperInsert(env, kind, n, f, false);
       }
     }
   } catch (e) {
@@ -556,6 +565,7 @@ async function paperPost(req, env, json, fail) {
   }
   if (!row || !row.num) return fail("Не выдался номер", 500);
   const num = fixNum(row.num);
+  const dup = await numDup(env, "papers", kind, num, Number(row.id));
   try {
     // Счётчик только вверх: номер выше счётчика двигает его, номер из пропуска не трогает.
     await env.DB.prepare(
@@ -563,15 +573,16 @@ async function paperPost(req, env, json, fail) {
     ).bind(kind, n).run();
     await writeAudit(env, req, who.user, "paper", kind, num);
   } catch (e) {}
-  return json({ num, id: row.id, digits: n });
+  return json(withWarn({ num, id: row.id, digits: n }, dup, num));
 }
-// Одна запись без дубля: строка вставляется, только если такого номера этого вида ещё нет.
-async function paperInsert(env, kind, n, f) {
+// Одна запись. dupOk — номер вписан руками, пишем даже поверх занятого (дубль разрешён).
+// Без dupOk (номер выдаёт база) строка вставляется, только если такого номера этого вида ещё нет.
+async function paperInsert(env, kind, n, f, dupOk) {
   const want = PAPER_PREFIX_1 + " || '-' || printf('%04d', ?2)";
   return env.DB.prepare(
     "INSERT INTO papers (kind, num, name, passport, discord_id, discord_name, created) " +
     "SELECT ?1, " + want + ", ?3, ?4, ?5, ?6, ?7 " +
-    "WHERE NOT EXISTS (SELECT 1 FROM papers WHERE kind = ?1 AND num = " + want + ") RETURNING id, num"
+    (dupOk ? "" : "WHERE NOT EXISTS (SELECT 1 FROM papers WHERE kind = ?1 AND num = " + want + ") ") + "RETURNING id, num"
   ).bind(kind, n, ...f).first();
 }
 async function orderPost(req, env, json, fail) {
@@ -589,16 +600,14 @@ async function orderPost(req, env, json, fail) {
   try {
     seqBefore = await orderSeq(env);
     if (w.n) {
+      // Номер вписан руками: пишем как есть, даже если он уже занят (дубль разрешён, будет предупреждение).
       n = w.n;
-      const want = await numText(env, "orders", kind, n);
-      if (await numTaken(env, "orders", kind, n, want)) return fail(takenMsg(want), 409);
-      row = await orderInsert(env, kind, n, f);
-      if (!row) return fail(takenMsg(want), 409);
+      row = await orderInsert(env, kind, n, f, true);
     } else {
       for (let i = 0; i < 5 && !row; i++) {
         n = await nextFree(env, "orders", kind);
         if (!n) return fail("Свободных номеров нет, впиши номер сам", 409);
-        row = await orderInsert(env, kind, n, f);
+        row = await orderInsert(env, kind, n, f, false);
       }
     }
   } catch (e) {
@@ -606,30 +615,37 @@ async function orderPost(req, env, json, fail) {
   }
   if (!row || !row.num) return fail("Не выдался номер", 500);
   const num = fixNum(row.num);
+  const dup = await numDup(env, "orders", kind, num, Number(row.id));
   try {
     await orderSeqAfter(env, Math.max(seqBefore, n), Number(row.id));
     await writeAudit(env, req, who.user, "order", kind, num);
   } catch (e) {}
-  return json({ num, id: row.id, digits: n });
+  return json(withWarn({ num, id: row.id, digits: n }, dup, num));
 }
-// Строка приказа без дубля. id стараемся взять равным номеру (как раньше: номер = id);
-// если этот id занят записью с другим номером, база выдаёт id сама, номер остаётся выбранным.
-async function orderInsert(env, kind, n, f) {
+// Строка приказа. id стараемся взять равным номеру (как раньше: номер = id);
+// если этот id занят другой записью, база выдаёт id сама, номер остаётся выбранным.
+// dupOk — номер вписан руками, пишем даже поверх занятого (дубль разрешён).
+// Без dupOk (номер выдаёт база) занятый номер не пишем — вернётся null, берётся следующий.
+async function orderInsert(env, kind, n, f, dupOk) {
   const want = ORDER_PREFIX_2 + " || '-' || printf('%04d', ?3)";
-  for (const id of [n, null]) {
-    const row = await env.DB.prepare(
-      "INSERT OR IGNORE INTO orders (id, num, kind, passport, name, rank, unit_name, issued, reason) " +
-      "SELECT ?1, " + want + ", ?2, ?4, ?5, ?6, ?7, ?8, ?9 " +
-      "WHERE NOT EXISTS (SELECT 1 FROM orders WHERE num = " + want + ") RETURNING id, num"
-    ).bind(id, kind, n, ...f).first();
-    if (row) return row;
-    // Не вставилось: либо номер уже занят (дубль, отказ), либо занят только id (пробуем id от базы).
+  const guard = dupOk ? "" : "WHERE NOT EXISTS (SELECT 1 FROM orders WHERE num = " + want + ") ";
+  const row = await env.DB.prepare(
+    "INSERT OR IGNORE INTO orders (id, num, kind, passport, name, rank, unit_name, issued, reason) " +
+    "SELECT ?1, " + want + ", ?2, ?4, ?5, ?6, ?7, ?8, ?9 " + guard + "RETURNING id, num"
+  ).bind(n, kind, n, ...f).first();
+  if (row) return row;
+  if (!dupOk) {
+    // Не вставилось: либо номер уже занят (берём следующий), либо занят только id (пробуем id от базы).
     const dup = await env.DB.prepare(
       "SELECT id FROM orders WHERE num = (CASE ?1 WHEN 'pred' THEN char(1055,1056) ELSE char(1042,1043) END) || '-' || printf('%04d', ?2)"
     ).bind(kind, n).first();
     if (dup) return null;
   }
-  return null;
+  // id занят: id выдаёт база. Без OR IGNORE — если что-то не даёт записать, будет ошибка, а не тихий пропуск.
+  return env.DB.prepare(
+    "INSERT INTO orders (id, num, kind, passport, name, rank, unit_name, issued, reason) " +
+    "SELECT ?1, " + want + ", ?2, ?4, ?5, ?6, ?7, ?8, ?9 " + guard + "RETURNING id, num"
+  ).bind(null, kind, n, ...f).first();
 }
 // Следующий номер приказа живёт в sqlite_sequence (его же правит /admin/seq).
 async function orderSeq(env) {
@@ -650,6 +666,7 @@ async function orderSeqAfter(env, target, newId) {
   }
 }
 // Только предложение: следующий свободный номер и префикс. Ничего не записывает и не занимает.
+// Вписать занятый номер всё равно можно — это лишь подсказка.
 async function suggestGet(req, env, url, cors, fail) {
   const who = await requireUser(req, env, fail);
   if (who.error) return who.error;
