@@ -1,6 +1,7 @@
 // Cloudflare Worker: рапорт в Discord, номера бланков и журнал приказов в D1.
 // Секреты (не в git): WEBHOOK_URL, ROLE_IDS, ALLOWED_ORIGIN, ADMIN_TOKEN, DISCORD_CLIENT_SECRET.
 // DISCORD_CLIENT_ID — открытый id приложения. База: DB (D1).
+// Пароль админки можно сменить без Cloudflare: kv admin_pass, сброс по коду (хэш в kv admin_reset).
 export default {
   async fetch(req, env) {
     const cors = {
@@ -93,13 +94,110 @@ export default {
 };
 
 
-function authed(req, env) {
-  const token = String(env.ADMIN_TOKEN || "");
+// Пароль админки: ADMIN_TOKEN из секретов воркера ИЛИ kv admin_pass (его меняет сам админ).
+// ADMIN_TOKEN принимается всегда, чтобы деплой не мог запереть админа.
+async function authed(req, env) {
   const got = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-  if (!token || got.length !== token.length) return false;
+  if (!got) return false;
+  let ok = sameText(String(env.ADMIN_TOKEN || ""), got);
+  let pass = null;
+  try { pass = await kvText(env, "admin_pass"); } catch (e) { pass = null; }
+  if (pass && sameText(pass, got)) ok = true;
+  return ok;
+}
+// Сравнение за одинаковое время (для строк одной длины). Пустой эталон не подходит никогда.
+function sameText(want, got) {
+  want = String(want || ""); got = String(got || "");
+  if (!want || got.length !== want.length) return false;
   let n = 0;
-  for (let i = 0; i < token.length; i++) n |= token.charCodeAt(i) ^ got.charCodeAt(i);
+  for (let i = 0; i < want.length; i++) n |= want.charCodeAt(i) ^ got.charCodeAt(i);
   return n === 0;
+}
+// Строка из kv: и JSON-строка, и просто текст (если строку вписали руками). Пусто — null.
+async function kvText(env, key) {
+  await kvReady(env);
+  const row = await env.DB.prepare("SELECT v FROM kv WHERE k = ?").bind(key).first();
+  if (!row || row.v == null || row.v === "") return null;
+  let s;
+  try { s = JSON.parse(row.v); } catch { s = row.v; }
+  return typeof s === "string" && s.length ? s : null;
+}
+// Новый пароль админки: 8–80 печатных символов ASCII (браузер не пошлёт кириллицу в заголовке),
+// без пробелов в начале и в конце (страница входа их обрезает).
+function adminPassError(p) {
+  if (typeof p !== "string" || p.length < 8 || p.length > 80) return "Пароль от 8 до 80 символов";
+  if (!/^[\x20-\x7e]+$/.test(p)) return "Только латиница, цифры и знаки, без кириллицы";
+  if (!p.trim() || p !== p.trim()) return "Без пробелов в начале и в конце";
+  return "";
+}
+async function setAdminPass(env, password) {
+  await kvReady(env);
+  await env.DB.prepare(
+    "INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+  ).bind("admin_pass", JSON.stringify(password)).run();
+}
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  let out = "";
+  for (const b of new Uint8Array(buf)) out += b.toString(16).padStart(2, "0");
+  return out;
+}
+// Код сброса: 20 знаков без похожих (нет 0/O/1/I/l/L). Регистр и дефисы при вводе не важны.
+const RESET_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function resetCodeNorm(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 64); }
+function newResetCode() {
+  let code = "";
+  const k = RESET_ALPHABET.length;
+  const cap = 256 - (256 % k);
+  while (code.length < 20) {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) if (b < cap && code.length < 20) code += RESET_ALPHABET[b % k];
+  }
+  return code;
+}
+// GET /admin/recovery (с паролем): код выдаётся один раз, в базе остаётся только SHA-256.
+async function recoveryGet(env, cors) {
+  const head = { ...cors, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
+  if (await kvText(env, "admin_reset")) return new Response(JSON.stringify({ set: true }), { status: 200, headers: head });
+  const code = newResetCode();
+  const hash = await sha256Hex(code);
+  // Запись только если ключа нет или он пуст: два одновременных входа не перепишут код друг друга.
+  const res = await env.DB.prepare(
+    "INSERT INTO kv (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v WHERE kv.v IS NULL OR kv.v = '' OR kv.v = '\"\"'"
+  ).bind("admin_reset", JSON.stringify(hash)).run();
+  if (!res.meta || !res.meta.changes) return new Response(JSON.stringify({ set: true }), { status: 200, headers: head });
+  return new Response(JSON.stringify({ code: code.match(/.{1,4}/g).join("-") }), { status: 200, headers: head });
+}
+// POST /admin/reset {code, password} без пароля. 5 неудач за 10 минут с одного IP — ждать.
+// Код никуда не пишется: ни в базу (только хэш), ни в журнал.
+async function resetPost(req, env, json, fail) {
+  try {
+    await kvReady(env);
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS reset_fail (ip TEXT, ts INTEGER)").run();
+    const ip = clip(req.headers.get("CF-Connecting-IP") || "0", 64);
+    const now = Math.floor(Date.now() / 1000);
+    // Чистится только эта служебная таблица неудачных попыток, старше часа.
+    await env.DB.prepare("DELETE FROM reset_fail WHERE ts < ?").bind(now - 3600).run();
+    const c = await env.DB.prepare("SELECT COUNT(*) AS c FROM reset_fail WHERE ip = ? AND ts >= ?").bind(ip, now - 600).first();
+    if (c && c.c >= 5) return fail("Слишком много попыток, подожди 10 минут", 429);
+    const body = await readBody(req);
+    const code = resetCodeNorm(body && body.code);
+    const password = body && typeof body.password === "string" ? body.password : "";
+    // Плохой новый пароль — до проверки кода: опечатка в пароле не тратит попытку и ничего не говорит о коде.
+    const bad = adminPassError(password);
+    if (bad) return fail(bad, 400);
+    const stored = await kvText(env, "admin_reset");
+    const ok = !!stored && code.length === 20 && sameText(String(stored).toLowerCase(), await sha256Hex(code));
+    if (!ok) {
+      await env.DB.prepare("INSERT INTO reset_fail (ip, ts) VALUES (?, ?)").bind(ip, now).run();
+      return fail("Код не подошёл", 403);
+    }
+    await setAdminPass(env, password);
+    return json({ ok: true });
+  } catch (e) {
+    return fail("Не сохранилось", 500);
+  }
 }
 async function gateOk(env, supplied) {
   const stored = await gateGet(env);
@@ -186,9 +284,19 @@ async function readBody(req) {
   try { return await req.json(); } catch { return null; }
 }
 async function adminRoute(req, env, url, json, fail, cors) {
-  if (!authed(req, env)) return fail("Неверный пароль", 401);
   const path = url.pathname.replace(/\/+$/, "");
+  if (path === "/admin/reset" && req.method === "POST") return resetPost(req, env, json, fail);
+  if (!(await authed(req, env))) return fail("Неверный пароль", 401);
   try {
+    if (path === "/admin/password" && req.method === "POST") {
+      const body = await readBody(req);
+      const password = body && typeof body.password === "string" ? body.password : "";
+      const bad = adminPassError(password);
+      if (bad) return fail(bad, 400);
+      await setAdminPass(env, password);
+      return json({ ok: true });
+    }
+    if (path === "/admin/recovery" && req.method === "GET") return recoveryGet(env, cors);
     if (path === "/admin/rules" && req.method === "GET") return rulesGet(env, cors, fail);
     if (path === "/admin/rules" && req.method === "PUT") {
       const body = await readBody(req);
