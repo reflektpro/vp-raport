@@ -62,7 +62,10 @@ export default {
     let content = String(payload.content || "").slice(0, 1800)
       .replace(/@(everyone|here)/g, "@\u200b$1")
       .replace(/<@&?\d+>/g, "");
-    content = roles.map(r => `<@&${r}>`).join(" ") + "\n" + content.trim();
+    // Автор — только из серверной сессии; упоминание сразу после ролей.
+    const authorId = /^\d{15,25}$/.test(String(who.user.id || "")) ? String(who.user.id) : "";
+    const mentions = roles.map(r => `<@&${r}>`).concat(authorId ? [`<@${authorId}>`] : []).join(" ");
+    content = (mentions + "\n" + content.trim()).slice(0, 2000);
 
     const embeds = (Array.isArray(payload.embeds) ? payload.embeds : []).slice(0, 2).map(e => ({
       title: String(e.title || "").slice(0, 256),
@@ -78,7 +81,7 @@ export default {
       username: "Военная полиция · Рапорты",
       content,
       embeds,
-      allowed_mentions: { parse: [], roles },
+      allowed_mentions: { parse: [], roles: [...roles], users: authorId ? [authorId] : [] },
       attachments: [{ id: 0, filename: "raport.png" }]
     }));
     out.append("files[0]", new Blob([file.body], { type: "image/png" }), "raport.png");
