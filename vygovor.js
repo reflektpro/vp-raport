@@ -266,40 +266,19 @@
     drawStamp(n.surname);
   }
   function drawStamp(seed){
-    const S = 360, cv = document.createElement("canvas"); cv.width = cv.height = S;
-    const g = cv.getContext("2d"), cx = S/2, ink = "rgba(36,58,160,1)";
-    g.strokeStyle = ink; g.fillStyle = ink;
-    ring(g, cx, 172, 5); ring(g, cx, 162, 2); ring(g, cx, 118, 3);
-    circleText(g, (C.stampOuter||"") + " ✶ ", cx, 138, "bold 25px 'Times New Roman', Tinos, serif");
-    circleText(g, (C.stampInner||"") + " ✶ ", cx, 98, "bold 17px 'Times New Roman', Tinos, serif");
-    g.font = "bold 28px 'Times New Roman', Tinos, serif"; g.textAlign = "center";
-    g.fillText(C.stampCenter || "", cx, cx + 62);
-    const em = $("emblemSrc");
-    if (em && em.complete && em.naturalWidth){
-      const t = document.createElement("canvas"); t.width = 130; t.height = 88;
-      const tg = t.getContext("2d"); tg.drawImage(em, 0, 0, 130, 88);
-      tg.globalCompositeOperation = "source-in"; tg.fillStyle = ink; tg.fillRect(0,0,130,88);
-      g.drawImage(t, cx-65, cx-62);
-    }
-    const r = rng("stamp" + seed), img = g.getImageData(0,0,S,S), a = img.data;
-    for (let i = 3; i < a.length; i += 4) if (a[i] && r() < 0.18) a[i] = a[i] * (0.25 + r()*0.5);
-    g.putImageData(img, 0, 0);
+    // оттиск — готовая картинка stamp.png, повёрнутая на случайный (но постоянный для фамилии) угол
+    if (!stampSrc.complete || !stampSrc.naturalWidth) return;
+    const S = 440, cx = S/2, d = S*0.97, r = rng("stamp" + seed);
     const out = document.createElement("canvas"); out.width = out.height = S;
-    const og = out.getContext("2d"); og.translate(cx,cx); og.rotate((r()*40-20)*Math.PI/180); og.drawImage(cv,-cx,-cx);
+    const og = out.getContext("2d"); og.translate(cx,cx); og.rotate((r()*40-20)*Math.PI/180); og.drawImage(stampSrc,-d/2,-d/2,d,d);
     $("stamp").src = out.toDataURL("image/png");
   }
-  function ring(g, c, rad, w){ g.lineWidth = w; g.beginPath(); g.arc(c, c, rad, 0, Math.PI*2); g.stroke(); }
-  function circleText(g, text, c, rad, font){
-    g.save(); g.font = font; g.textAlign = "center"; g.textBaseline = "middle";
-    const chars = [...text], step = (Math.PI*2) / chars.length;
-    chars.forEach((ch, i) => {
-      const ang = -Math.PI/2 + i*step;
-      g.save(); g.translate(c + rad*Math.cos(ang), c + rad*Math.sin(ang)); g.rotate(ang + Math.PI/2); g.fillText(ch, 0, 0); g.restore();
-    });
-    g.restore();
+  const stampSrc = new Image(); stampSrc.src = "stamp.png";
+  const stampReady = stampSrc.decode().catch(() => {}).then(() => updateSignature());
+  async function stampLoaded(){
+    await stampReady;
+    const s = $("stamp"); if (s.getAttribute("src")) await s.decode().catch(() => {});
   }
-  const emImg = new Image(); emImg.id = "emblemSrc"; emImg.src = "emblem.png"; emImg.style.display = "none";
-  emImg.onload = () => updateSignature(); document.body.appendChild(emImg);
   $("stampOn").addEventListener("change", e => $("stamp").style.visibility = e.target.checked ? "visible" : "hidden");
   updateSignature();
   refill();
@@ -319,6 +298,7 @@
 
   async function renderPNG(){
     if (document.fonts) await document.fonts.ready;
+    await stampLoaded();
     const n = parseName($("fromName").value);
     return html2canvas($("paper"), {
       scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false,
