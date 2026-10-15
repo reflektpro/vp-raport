@@ -21,19 +21,16 @@ window.PROMO = {
     { key: "event6",    name: "Мероприятие от 6 человек", pts: 30, doc: "Организовано мероприятий от 6 человек" },
     { key: "reattest",  name: "Проведение переаттестации", pts: 30, doc: "Проведено переаттестаций" },
     { key: "gmp",       name: "Посещение ГМП", pts: 40, doc: "Посещений ГМП" },
-    { key: "guardhouse",name: "Посадка на гауптвахту", pts: 75, doc: "Помещено военнослужащих на гауптвахту" },
-    { key: "intern",    name: "Стажировка успешно завершена", pts: 0, doc: "Успешно завершена стажировка", once: true },
-    { key: "lecture",   name: "Прослушана лекция по задержанию и ПК", pts: 0, doc: "Прослушана лекция по задержанию и процессуальному кодексу", once: true },
-    { key: "exam",      name: "Сдан экзамен по задержанию и ПК", pts: 0, doc: "Сдан экзамен по задержанию и процессуальному кодексу", once: true }
+    { key: "guardhouse",name: "Посадка на гауптвахту", pts: 75, doc: "Помещено военнослужащих на гауптвахту" }
   ],
 
   // ступени: points — сколько баллов набрать, need — сколько раз сделать каждый вид работы
   ladder: {
     "Сержант":            { to: "Старший сержант",    points: 150,  need: { naryad: 1, prof: 1, training: 1 } },
-    "Старший сержант":    { to: "Старшина",           points: 250,  need: { naryad: 1, training: 1, prof: 2, intern: 1 } },
+    "Старший сержант":    { to: "Старшина",           points: 250,  need: { naryad: 1, training: 1, prof: 2 } },
     "Старшина":           { to: "Прапорщик",          points: 350,  need: { naryad: 1, prof: 3, inspect: 5, training: 2 } },
     "Прапорщик":          { to: "Старший прапорщик",  points: 450,  need: { naryad: 2, prof: 4, training: 3 } },
-    "Старший прапорщик":  { to: "Младший лейтенант",  points: 550,  need: { training: 3, patrol: 2, prof: 4, lecture: 1, exam: 1 } },
+    "Старший прапорщик":  { to: "Младший лейтенант",  points: 550,  need: { training: 3, patrol: 2, prof: 4 } },
     "Младший лейтенант":  { to: "Лейтенант",          points: 650,  need: { patrol: 1, prof: 4, training: 3, prizyv: 3 } },
     "Лейтенант":          { to: "Старший лейтенант",  points: 750,  need: { patrol: 1, prof: 6, docs: 5, vzysk: 3, training: 3 } },
     "Старший лейтенант":  { to: "Капитан",            points: 1500, need: { prof: 7, vzysk: 5, prizyv: 3, training: 5 } }
