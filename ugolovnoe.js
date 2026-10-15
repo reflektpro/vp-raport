@@ -6,7 +6,7 @@
   const $ = id => document.getElementById(id);
   const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   const OFF = ["fromPos","fromRank","fromName","staticId"];
-  const CASE_F = ["num","article","suspName","suspInfo","applicant","victim","chief"];
+  const CASE_F = ["num","article","suspName","suspInfo","applicant","victim","chiefPos","chiefRank","chiefName"];
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const pad = n => String(n).padStart(2, "0");
   const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -20,7 +20,7 @@
   const save = () => localStorage.setItem("vp_ud", JSON.stringify(S));
   function newCase() {
     const id = "c" + Date.now().toString(36);
-    S.cases[id] = { num: "", article: "", suspName: "", suspInfo: "", applicant: "", victim: "", chief: "", docs: {}, created: Date.now() };
+    S.cases[id] = { num: "", article: "", suspName: "", suspInfo: "", applicant: "", victim: "", chiefPos: "", chiefRank: "", chiefName: "", docs: {}, created: Date.now() };
     S.cur = id; save(); return id;
   }
   if (!S.cur || !S.cases[S.cur]) { const ids = Object.keys(S.cases); if (ids.length) S.cur = ids[ids.length - 1]; else newCase(); }
@@ -43,6 +43,9 @@
   function fillCases() {
     $("caseSel").innerHTML = Object.entries(S.cases).map(([id, c]) =>
       `<option value="${id}" ${id === S.cur ? "selected" : ""}>${c.num ? "УД № " + esc(c.num) : "новое дело"}${c.suspName ? " · " + esc(c.suspName) : ""}</option>`).join("");
+    const c0 = cs();
+    // старое поле «Начальник» одной строкой: переносим в «звание и имя», должность вводится отдельно
+    if (c0.chief && !c0.chiefName && !c0.chiefPos) { c0.chiefName = c0.chief; delete c0.chief; save(); }
     CASE_F.forEach(k => { $("c_" + k).value = cs()[k] || ""; $("c_" + k).classList.remove("bad"); });
   }
   $("caseSel").addEventListener("change", () => { S.cur = $("caseSel").value; save(); fillCases(); fillDoc(); });
@@ -55,6 +58,7 @@
   });
   CASE_F.forEach(k => $("c_" + k).addEventListener("input", () => {
     cs()[k] = $("c_" + k).value; $("c_" + k).classList.remove("bad"); save();
+    if (["suspName","suspInfo","victim","applicant"].includes(k)) { const D = def(); if (D.fields.some(f => f.id === "people")) fillDoc(); }
     if (k === "num" || k === "suspName") { const o = $("caseSel").selectedOptions[0]; if (o) o.textContent = (cs().num ? "УД № " + cs().num : "новое дело") + (cs().suspName ? " · " + cs().suspName : ""); }
     paint();
   }));
@@ -76,12 +80,48 @@
       if (f.type === "area") inp = `<textarea data-k="${f.id}" rows="3" placeholder="${esc(f.ph || "")}">${val}</textarea>`;
       else if (f.type === "select") inp = `<select data-k="${f.id}"><option value="">— выбери —</option>${f.options.map(o => `<option ${o === d[f.id] ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
       else inp = `<input data-k="${f.id}" ${f.type === "time" ? 'type="time"' : ""} value="${val}" placeholder="${esc(f.ph || "")}">`;
-      return `<label class="plab">${esc(f.label)}${inp}</label>`;
+      let add = "";
+      if (f.id === "people") {
+        const opts = ["подозреваемый", "потерпевший", "заявитель"].filter(r => fromRole(r));
+        if (opts.length) add = `<div class="ud-addp">${opts.map(r => `<button type="button" class="mini" data-addp="${r}">+ ${r}</button>`).join(" ")}</div>`;
+      }
+      return `<label class="plab">${esc(f.label)}${inp}</label>${add}`;
     }).join("");
     fillEv(); paint();
   }
   $("docFields").addEventListener("input", e => { const k = e.target.dataset.k; if (!k) return; dd()[k] = e.target.value; e.target.classList.remove("bad"); save(); paint(); });
-  $("docFields").addEventListener("change", e => { const k = e.target.dataset.k; if (!k) return; dd()[k] = e.target.value; save(); paint(); });
+  // ФИО по процессуальному положению из карточки дела
+  function fromRole(role) {
+    const c = cs(), t = s => (s || "").trim();
+    if (role === "подозреваемый") return t(c.suspName) ? t(c.suspName) + (t(c.suspInfo) ? ", " + t(c.suspInfo) : "") : "";
+    if (role === "потерпевший") return t(c.victim);
+    if (role === "заявитель") return t(c.applicant);
+    return "";
+  }
+  $("docFields").addEventListener("change", e => {
+    const k = e.target.dataset.k; if (!k) return; const d = dd(); d[k] = e.target.value;
+    const f = def().fields.find(x => x.id === k);
+    if (f && f.fills) {
+      const tgt = d[f.fills] || "", nv = fromRole(e.target.value);
+      // перезаписываем только пустое поле или ранее подставленное автоматически
+      if (!tgt.trim() || tgt === d["_auto_" + f.fills]) {
+        d[f.fills] = nv; d["_auto_" + f.fills] = nv;
+        const inp = $("docFields").querySelector(`[data-k="${f.fills}"]`); if (inp) inp.value = nv;
+      }
+    }
+    save(); paint();
+  });
+  // кнопки «+ из дела» для списка участвующих лиц в протоколах
+  $("docFields").addEventListener("click", e => {
+    const b = e.target.closest("[data-addp]"); if (!b) return;
+    const d = dd(), line = fromRole(b.dataset.addp); if (!line) return;
+    const row = `${line.split(",")[0]} — ${b.dataset.addp}`;
+    const cur = (d.people || "").split("\n").map(s => s.trim()).filter(Boolean);
+    if (!cur.some(x => x.startsWith(line.split(",")[0]))) cur.push(row);
+    d.people = cur.join("\n"); save();
+    const ta = $("docFields").querySelector('[data-k="people"]'); if (ta) ta.value = d.people;
+    paint();
+  });
   $("d_date").addEventListener("change", () => { dd().date = $("d_date").value; save(); paint(); });
 
   // ---------- доказательства (без ограничения количества) ----------
@@ -136,7 +176,7 @@
   function ctx() {
     const c = Object.assign({}, cs());
     c.offPos = $("fromPos").value.trim(); c.offName = $("fromName").value.trim();
-    c.offRankGen = $("fromRank").value.trim().toLowerCase();
+    c.offRank = $("fromRank").value.trim().toLowerCase();
     return c;
   }
   function paint() {
@@ -145,7 +185,8 @@
     $("pSub").textContent = D.sub;
     $("pDate").textContent = human(d.date);
     $("pCity").textContent = C.city || "Москва";
-    $("pNum").textContent = c.num ? "УД № " + c.num : "УД № ____";
+    // до возбуждения дела номера УД нет: у рапорта/заявления/отказа — собственный рег. № (необязательный)
+    $("pNum").textContent = D.noCase ? (d.regNo && d.regNo.trim() ? "Рег. № " + d.regNo.trim() : "") : (c.num ? "УД № " + c.num : "УД № ____");
     $("pTo").innerHTML = D.to ? D.to(c, d) : ""; $("pTo").style.display = D.to ? "" : "none";
     $("pApprove").style.display = D.approve ? "" : "none";
     $("pBody").innerHTML = D.body(c, d);
@@ -169,8 +210,8 @@
     let first = null;
     const mark = el => { el.classList.add("bad"); first = first || el; };
     OFF.forEach(id => { if (!$(id).value.trim()) mark($(id)); });
-    if (!cs().num.trim()) mark($("c_num"));
-    if (first) { status("Заполни подсвеченные поля: дознаватель и номер дела.", "err"); first.focus(); return false; }
+    if (!def().noCase && !String(cs().num || "").trim()) mark($("c_num"));
+    if (first) { status(def().noCase ? "Заполни подсвеченные поля: дознаватель." : "Заполни подсвеченные поля: дознаватель и номер дела.", "err"); first.focus(); return false; }
     const D = def(), probs = D.check ? D.check(ctx(), dd()) : [];
     if (probs.length && !confirm("По требованиям УПК не хватает:\n• " + probs.join("\n• ") + "\n\nВсё равно продолжить?")) return false;
     return true;
@@ -191,11 +232,13 @@
     const off = `${$("fromPos").value.trim()}, ${$("fromRank").value.trim()} ${$("fromName").value.trim()} | ${$("staticId").value.trim()}`;
     const ev = evOk();
     const lines = [
-      `⚖️ **УГОЛОВНОЕ ДЕЛО № ${c.num}** · ${D.short}`,
+      D.noCase ? `⚖️ **МАТЕРИАЛ ПРОВЕРКИ${d.regNo && d.regNo.trim() ? " · рег. № " + d.regNo.trim() : ""}** · ${D.short}` : `⚖️ **УГОЛОВНОЕ ДЕЛО № ${c.num}** · ${D.short}`,
       `**Основание:** ${D.arts}`,
       `**Дознаватель:** ${off}`,
       c.article ? `**Статья УК:** ${c.article}` : "",
       c.suspName ? `**Лицо:** ${c.suspName}${c.suspInfo ? ", " + c.suspInfo : ""}` : "",
+      (c.victim || "").trim() ? `**Потерпевший:** ${c.victim.trim()}` : "",
+      (c.applicant || "").trim() ? `**Заявитель:** ${c.applicant.trim()}` : "",
       `**Дата:** ${human(d.date)}`,
       D.route ? `**Направить:** ${D.route}` : "",
       d.video ? `**Видеозапись:** ${link(d.video)}` : ""
@@ -236,7 +279,7 @@
       if (res.status === 403) throw new Error(t || "Сначала войди через Discord");
       if (!res.ok) throw new Error(`${res.status} ${t}`);
       dd().sent = Date.now(); save();
-      status(`«${def().short}» по УД № ${cs().num} отправлен.`, "ok");
+      status(def().noCase ? `«${def().short}» отправлен.` : `«${def().short}» по УД № ${cs().num} отправлен.`, "ok");
     } catch (e) { status("Не отправилось: " + e.message, "err"); } finally { busy(false); }
   });
   $("download").addEventListener("click", async () => {

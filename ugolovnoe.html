@@ -54,9 +54,12 @@
     <label class="plab">Пункт, часть, статья УК РФ<input id="c_article" placeholder="ч. 1 ст. 45 УК РФ"></label>
     <label class="plab">Лицо (подозреваемый): ФИО<input id="c_suspName" placeholder="Иванов Иван Иванович"></label>
     <label class="plab">Данные о лице<input id="c_suspInfo" placeholder="рядовой, инспектор ВП, статик 1234"></label>
-    <label class="plab">Заявитель<input id="c_applicant" placeholder="если есть"></label>
-    <label class="plab">Потерпевший<input id="c_victim" placeholder="если есть"></label>
-    <label class="plab">Начальник органа дознания<input id="c_chief" placeholder="должность, звание, ФИО"></label>
+    <label class="plab">Заявитель<input id="c_applicant" placeholder="ФИО, данные (если есть)"></label>
+    <label class="plab">Потерпевший<input id="c_victim" placeholder="ФИО, данные (если есть)"></label>
+    <div class="acts-hint">Начальник органа дознания (адресат рапорта) — в дательном падеже, автоматически не склоняется.</div>
+    <label class="plab">Должность адресата (кому)<input id="c_chiefPos" placeholder="Командиру батальона ВП"></label>
+    <label class="plab">Звание адресата (кому)<input id="c_chiefRank" placeholder="полковнику"></label>
+    <label class="plab">И. Фамилия адресата (кому)<input id="c_chiefName" placeholder="Н. Прайду"></label>
 
     <h3>Дознаватель</h3>
     <label class="plab">Должность<input class="f req" id="fromPos" list="positions" placeholder="Дознаватель ВП"></label>
