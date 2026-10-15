@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГУ ВП · Уголовные дела</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Tinos:ital,wght@0,400;0,700;1,400&family=Oswald:wght@400;600&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="promo ud">
+<header class="topbar">
+  <img src="emblem.png" alt="">
+  <div>
+    <div class="t1">ГЛАВНОЕ УПРАВЛЕНИЕ ВОЕННОЙ ПОЛИЦИИ</div>
+    <div class="t2">Уголовные дела · дознание</div>
+  </div>
+  <nav class="tabs"><a href="index.html">На взыскание</a><a href="povyshenie.html">На повышение</a><a href="otchet.html">Отчёт</a><a href="vygovor.html">Выговор</a><a href="ugolovnoe.html" class="on">Уголовные дела</a><a href="gajd.html">Гайд УД</a></nav>
+</header>
+
+<main class="layout">
+  <section class="desk">
+    <div class="paper" id="paper">
+      <div class="ud-approve" id="pApprove">УТВЕРЖДАЮ<br>Прокурор ______________________<br>«___» ____________ 20__ г.<br>подпись ____________</div>
+      <div class="emblem"><img src="emblem.png" alt=""></div>
+      <div class="hdr" id="hdr"></div>
+      <div class="addressee" id="pTo"></div>
+      <h1 class="title" id="pTitle"></h1>
+      <div class="subtitle" id="pSub"></div>
+      <div class="meta"><span id="pDate"></span><span id="pCity"></span><span id="pNum"></span></div>
+      <div class="rule"></div>
+      <div id="pBody"></div>
+      <div class="appendix" id="pApp"><b>Приложение:</b><div id="pAppList"></div></div>
+      <div class="sign">
+        <div class="sign-left"><span id="sPos"></span><span id="sRank"></span></div>
+        <div class="sign-mid">
+          <img id="stamp" alt="">
+          <div class="autograph"><span id="autoText"></span><svg id="autoFlourish" viewBox="0 0 240 100"><path id="autoPath" d=""/></svg></div>
+        </div>
+        <div class="sign-right"><span id="sName"></span><div class="static-line">статик № <span id="sStatic"></span></div></div>
+      </div>
+      <div class="ud-signs" id="pSigns"></div>
+    </div>
+  </section>
+
+  <aside class="panel calc-panel">
+    <h2>Уголовное дело</h2>
+    <div class="ud-case-row"><select id="caseSel"></select><button type="button" class="mini" id="caseNew" title="Новое дело">+ дело</button><button type="button" class="mini" id="caseDel" title="Удалить дело">×</button></div>
+    <label class="plab">Номер дела (вписывается вручную)<input id="c_num" placeholder="например, 12/2026"></label>
+    <label class="plab">Пункт, часть, статья УК РФ<input id="c_article" placeholder="ч. 1 ст. 45 УК РФ"></label>
+    <label class="plab">Лицо (подозреваемый): ФИО<input id="c_suspName" placeholder="Иванов Иван Иванович"></label>
+    <label class="plab">Данные о лице<input id="c_suspInfo" placeholder="рядовой, инспектор ВП, статик 1234"></label>
+    <label class="plab">Заявитель<input id="c_applicant" placeholder="если есть"></label>
+    <label class="plab">Потерпевший<input id="c_victim" placeholder="если есть"></label>
+    <label class="plab">Начальник органа дознания<input id="c_chief" placeholder="должность, звание, ФИО"></label>
+
+    <h3>Дознаватель</h3>
+    <label class="plab">Должность<input class="f req" id="fromPos" list="positions" placeholder="Дознаватель ВП"></label>
+    <label class="plab">Звание<input class="f req" id="fromRank" list="ranks" placeholder="Лейтенант"></label>
+    <label class="plab">Имя Фамилия<input class="f req" id="fromName" placeholder="Имя Фамилия"></label>
+    <label class="plab">Статик<input class="f req" id="staticId" placeholder="0000"></label>
+
+    <h3>Документ</h3>
+    <select id="docSel" class="ud-doc"></select>
+    <div class="ud-arts">Основание: <b id="docArts"></b></div>
+    <div class="ud-arts">Куда: <span id="docRoute"></span></div>
+    <label class="plab">Дата документа<input type="date" id="d_date"></label>
+    <div id="docFields"></div>
+
+    <h3>Приложение (доказательства)</h3>
+    <div class="acts-hint">Сколько угодно строк. Название попадёт в документ, ссылка уйдёт в сообщение Discord.</div>
+    <div id="evList"></div>
+    <button type="button" class="btn ghost" id="evAdd">+ материал</button>
+
+    <div class="crit-note no" id="checksBox"><b>Не хватает по УПК:</b><ul id="checks"></ul></div>
+    <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
+    <button class="btn primary" id="send">Отправить в Discord</button>
+    <button class="btn" id="download">Скачать PNG</button>
+    <button class="btn ghost" id="clearDoc">Очистить бланк</button>
+    <div class="status" id="status"></div>
+    <div class="note">Как вести дело по шагам, читай в <a href="gajd.html">гайде</a>. Дела хранятся только в этом браузере.</div>
+  </aside>
+</main>
+
+<datalist id="ranks">
+  <option>Рядовой</option><option>Ефрейтор</option><option>Младший сержант</option><option>Сержант</option>
+  <option>Старший сержант</option><option>Старшина</option><option>Прапорщик</option><option>Старший прапорщик</option>
+  <option>Младший лейтенант</option><option>Лейтенант</option><option>Старший лейтенант</option><option>Капитан</option>
+  <option>Майор</option><option>Подполковник</option><option>Полковник</option><option>Генерал-майор</option><option>Генерал-лейтенант</option><option>Генерал-полковник</option><option>Генерал армии</option>
+</datalist>
+<datalist id="positions">
+  <option>Дознаватель ВП</option><option>Дознаватель военной комендатуры</option><option>Ком. Бат ВП</option><option>Зам. Ком. Бат ВП</option><option>Комендант гарнизона</option><option>Заместитель коменданта гарнизона</option>
+</datalist>
+<datalist id="evTypes">
+  <option>Видеозапись с нагрудной камеры (боди-камера)</option><option>Видеозапись допроса</option><option>Протокол следственного действия</option><option>Скриншот</option><option>Аудиозапись</option><option>Заключение эксперта</option><option>Вещественное доказательство</option><option>Запись из аудита Discord</option>
+</datalist>
+
+<script src="config.js"></script>
+<script src="auth.js"></script>
+<script src="html2canvas.min.js"></script>
+<script src="pages.js"></script>
+<script src="ud-docs.js"></script>
+<script src="ugolovnoe.js"></script>
+</body>
+</html>
