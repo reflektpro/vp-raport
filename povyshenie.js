@@ -317,8 +317,7 @@
     const payload = {
       username: "Военная полиция · Рапорты",
       content: lines.filter(Boolean).join("\n").replace(/@(everyone|here)/g, "@\u200b$1"),
-      allowed_mentions: { parse: [], roles },
-      attachments: [{ id: 0, filename: "raport.png" }]
+      allowed_mentions: { parse: [], roles }
     };
     if (fields.length) payload.embeds = [{ title: "Доказательства", color: 0xC9A227, fields: fields.slice(0, 25) }];
     return payload;
@@ -336,11 +335,9 @@
       await takePaper();
       numStatus("Печатаю бланк…");
       const canvas = await doRender();
-      const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
       const fd = new FormData();
       fd.append("payload_json", JSON.stringify(buildPayload(r)));
-      if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
-      fd.append("files[0]", new File([blob], "raport.png", { type: "image/png" }));
+      await VP_PAGES.addFiles(fd, canvas, "raport");
       fd.append("kind", "promo");
       fd.append("num", $("num").value.trim());
       numStatus("Отправляю в Discord…");
@@ -358,9 +355,9 @@
     try {
       await takePaper();
       numStatus("Печатаю бланк…");
-      const canvas = await doRender(), a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png"); a.download = `raport_${$("num").value.replace(/[^\wА-я-]/g,"_")}.png`; a.click();
-      numStatus("Картинка скачана.", "ok");
+      const canvas = await doRender();
+      const pg = VP_PAGES.download(canvas, `raport_${$("num").value.replace(/[^\wА-я-]/g,"_")}`);
+      numStatus(pg > 1 ? `Скачано листов: ${pg}.` : "Картинка скачана.", "ok");
     } catch (e) { status("Ошибка: " + e.message, "err"); } finally { busy(false); }
   });
   $("clear").addEventListener("click", () => {

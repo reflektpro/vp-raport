@@ -84,14 +84,17 @@
       <input id="tPass" placeholder="000-000" autocomplete="off">
     </label>
     <div class="hist" id="hist"></div>
-    <h3 class="duty-h">Отработка, все пункты</h3>
-    <ol class="duty-preview" id="dutyPreview"></ol>
+    <h3 class="duty-h">Отработка</h3>
+    <div class="duty-edit" id="dutyEdit"></div>
+    <div class="row-btns"><button type="button" class="mini" id="dutyAdd">+ пункт</button><button type="button" class="mini" id="dutyReset">По уставу</button></div>
+    <div class="norm-hint" id="dutyHint">Пункты подставлены по уставу. Любой можно переписать своими словами, удалить или добавить новый — подсказки из устава появятся при вводе.</div>
+    <datalist id="dutyOpts"></datalist>
     <label class="chk"><input type="checkbox" id="stampOn" checked> Ставить печать</label>
     <button class="btn primary" id="send">Отправить приказ</button>
     <button class="btn" id="download">Скачать PNG</button>
     <button class="btn ghost" id="clear">Очистить нарушителя</button>
     <div class="status" id="status"></div>
-    <div class="note">Для одного подразделения отработка всегда одинаковая, все пункты. У рядового военной академии свои поставки: 5 на предупреждение и 9 на выговор. Номер приказа берётся по порядку из базы, а по паспорту видно, были ли уже предупреждение или выговор.</div>
+    <div class="note">По умолчанию отработка подставляется по уставу (все пункты для подразделения), но руководитель может переписать её своими словами. У рядового военной академии свои поставки: 5 на предупреждение и 9 на выговор. Номер приказа берётся по порядку из базы, а по паспорту видно, были ли уже предупреждение или выговор.</div>
   </aside>
 </main>
 
@@ -115,6 +118,7 @@
 <script src="num.js"></script>
 <script src="vygovor-rules.js"></script>
 <script src="html2canvas.min.js"></script>
+<script src="pages.js"></script>
 <script src="vygovor.js"></script>
 </body>
 </html>

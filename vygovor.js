@@ -143,12 +143,47 @@
   });
 
   function unit(){ return UNITS.find(u => u.id === $("unit").value) || UNITS[0]; }
+  // Отработка: по умолчанию все пункты устава; после правки руководителя — его свободный текст (state.custom).
   function items(){
+    if (state.custom) return state.custom.map(t => t.trim()).filter(Boolean);
+    return charterItems();
+  }
+  function charterItems(){
     const u = unit();
     if (!u) return [];
     if (u.id === "va" && /^рядов/i.test($("tRank").value.trim())) return u[state.kind + "Private"] || [];
     return u[state.kind] || [];
   }
+  function dutyOptions(){
+    const all = new Set();
+    UNITS.forEach(u => Object.keys(u).forEach(k => Array.isArray(u[k]) && u[k].forEach(t => all.add(t))));
+    $("dutyOpts").innerHTML = [...all].map(t => `<option value="${esc(t)}"></option>`).join("");
+  }
+  function drawDuty(force){
+    const box = $("dutyEdit");
+    if (!force && box.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return; // не мешаем печатать
+    const rows = state.custom || charterItems();
+    box.innerHTML = rows.map((t, i) => `<div class="duty-row"><span>${i + 1}.</span><input list="dutyOpts" data-i="${i}" value="${esc(t)}" placeholder="своя отработка или выбери из устава"><button type="button" class="x" data-del="${i}" title="Убрать">×</button></div>`).join("");
+    $("dutyHint").textContent = state.custom
+      ? "Отработка своя. «По уставу» вернёт пункты из дисциплинарного устава."
+      : "Пункты подставлены по уставу. Любой можно переписать своими словами, удалить или добавить новый — подсказки из устава появятся при вводе.";
+  }
+  function customize(){ if (!state.custom) state.custom = charterItems().slice(); }
+  $("dutyEdit").addEventListener("input", e => {
+    if (!e.target.dataset.i) return;
+    customize(); state.custom[+e.target.dataset.i] = e.target.value;
+    $("workList").innerHTML = items().map(esc).map(t => `<li>${t}</li>`).join("");
+  });
+  $("dutyEdit").addEventListener("focusout", () => setTimeout(drawDuty, 0));
+  $("dutyEdit").addEventListener("click", e => {
+    const d = e.target.dataset.del; if (d === undefined) return;
+    customize(); state.custom.splice(+d, 1); refill(); drawDuty(true);
+  });
+  $("dutyAdd").addEventListener("click", () => {
+    customize(); state.custom.push(""); refill(); drawDuty(true);
+    const ins = $("dutyEdit").querySelectorAll("input"); ins[ins.length - 1].focus();
+  });
+  $("dutyReset").addEventListener("click", () => { state.custom = null; refill(); drawDuty(true); });
   function persist(){ localStorage.setItem("vp_vyg", JSON.stringify({ kind: state.kind, unit: $("unit").value })); }
   function digits(s){ return String(s || "").replace(/\D/g, ""); }
   function dropNumber(){ numBox.changed(); }
@@ -227,9 +262,8 @@
     $("passShow").textContent = $("tPass").value.trim() || "______";
     $("normPoints").textContent = pointPhrase();
     const list = items();
-    const html = list.map(esc).map(t => `<li>${t}</li>`).join("");
-    $("workList").innerHTML = html;
-    $("dutyPreview").innerHTML = html;
+    $("workList").innerHTML = list.map(esc).map(t => `<li>${t}</li>`).join("");
+    drawDuty();
   }
 
   function parseName(full){
@@ -281,6 +315,7 @@
   }
   $("stampOn").addEventListener("change", e => $("stamp").style.visibility = e.target.checked ? "visible" : "hidden");
   updateSignature();
+  dutyOptions();
   refill();
 
   function validate(){
@@ -353,11 +388,9 @@
       await takeNumber();
       numStatus("Печатаю бланк…");
       const canvas = await renderPNG();
-      const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
       const fd = new FormData();
       fd.append("payload_json", JSON.stringify(buildPayload()));
-      if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
-      fd.append("files[0]", new File([blob], "prikaz.png", { type: "image/png" }));
+      await VP_PAGES.addFiles(fd, canvas, "prikaz");
       fd.append("kind", state.kind);
       fd.append("num", $("num").value.trim());
       numStatus("Отправляю в Discord…");
@@ -384,11 +417,8 @@
       await takeNumber();
       numStatus("Печатаю бланк…");
       const canvas = await renderPNG();
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = `prikaz_${$("num").value.replace(/[^\wА-я-]/g,"_")}.png`;
-      a.click();
-      numStatus("Картинка скачана.", "ok");
+      const pg = VP_PAGES.download(canvas, `prikaz_${$("num").value.replace(/[^\wА-я-]/g,"_")}`);
+      numStatus(pg > 1 ? `Скачано листов: ${pg}.` : "Картинка скачана.", "ok");
     } catch (e) { status("Ошибка: " + e.message, "err"); } finally { busy(false); }
   });
 
@@ -410,6 +440,7 @@
       $("unit").appendChild(o);
     });
     if (UNITS.some(u => u.id === cur)) $("unit").value = cur;
+    dutyOptions();
     refill();
   });
 

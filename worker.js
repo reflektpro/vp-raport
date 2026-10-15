@@ -47,10 +47,13 @@ export default {
     const who = await requireUser(req, env, fail);
     if (who.error) return who.error;
 
-    const file = parts.find(p => p.filename);
-    const png = file && file.body[0] === 0x89 && file.body[1] === 0x50 && file.body[2] === 0x4e && file.body[3] === 0x47;
-    if (!file || !png || file.body.length > 8 * 1024 * 1024)
-      return fail("Картинка не принята: тип «" + ((file && file.type) || "пусто") + "», размер " + (file ? file.body.length : 0) + " байт", 400);
+    // Листы документа: files[0..9] (многостраничный бланк — несколько PNG, у Discord лимит 10 вложений).
+    const files = parts.filter(p => p.filename).slice(0, 10);
+    const isPng = f => f.body[0] === 0x89 && f.body[1] === 0x50 && f.body[2] === 0x4e && f.body[3] === 0x47;
+    const bad = files.find(f => !isPng(f) || f.body.length > 8 * 1024 * 1024);
+    const total = files.reduce((n, f) => n + f.body.length, 0);
+    if (!files.length || bad || total > 24 * 1024 * 1024)
+      return fail("Картинка не принята: тип «" + ((bad && bad.type) || (files.length ? "png" : "пусто")) + "», размер " + (bad ? bad.body.length : total) + " байт", 400);
 
     const limited = await rateLimit(req, env, who.user.id);
     if (limited) return fail(limited, 429);
@@ -82,9 +85,9 @@ export default {
       content,
       embeds,
       allowed_mentions: { parse: [], roles: [...roles], users: authorId ? [authorId] : [] },
-      attachments: [{ id: 0, filename: "raport.png" }]
+      attachments: files.map((f, i) => ({ id: i, filename: fileName(f, i, files.length) }))
     }));
-    out.append("files[0]", new Blob([file.body], { type: "image/png" }), "raport.png");
+    files.forEach((f, i) => out.append(`files[${i}]`, new Blob([f.body], { type: "image/png" }), fileName(f, i, files.length)));
 
     const res = await fetch(env.WEBHOOK_URL + "?wait=true", { method: "POST", body: out });
     if (res.ok) {
@@ -96,6 +99,12 @@ export default {
   }
 };
 
+// Имя вложения: только латиница/цифры, иначе raport.png / raport_N.png.
+function fileName(f, i, n) {
+  const raw = String(f.filename || "").replace(/\.png$/i, "");
+  const base = /^[\w-]{1,40}$/.test(raw) ? raw : (n > 1 ? "raport_" + (i + 1) : "raport");
+  return base + ".png";
+}
 
 // Пароль админки: ADMIN_TOKEN из секретов воркера ИЛИ kv admin_pass (его меняет сам админ).
 // ADMIN_TOKEN принимается всегда, чтобы деплой не мог запереть админа.

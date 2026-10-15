@@ -99,6 +99,35 @@
   $("stampOn").addEventListener("change", e => $("stamp").style.visibility = e.target.checked ? "visible" : "hidden");
   updateSignature();
 
+  // ---------- приложение: доказательства (вид + ссылка), сколько угодно ----------
+  const EV_DEFAULT = "Видеозапись с нагрудной камеры (боди-камера)";
+  function evRow(type, link){
+    const row = document.createElement("div");
+    row.className = "app-row ev-row";
+    row.innerHTML = `<span class="ev-n"></span><input class="f ev-type" list="evTypes" placeholder="вид: боди-камера, аудит Discord, скриншот…"><span class="ev-colon">:</span><input class="f link ev-link" placeholder="ссылка (YouTube, Rutube, VK, Imgur, Диск…)"><button type="button" class="ev-x" title="Убрать">×</button>`;
+    row.querySelector(".ev-type").value = type || "";
+    row.querySelector(".ev-link").value = link || "";
+    $("evList").appendChild(row);
+    renumberEv();
+    return row;
+  }
+  function renumberEv(){ [...$("evList").children].forEach((r, i) => r.querySelector(".ev-n").textContent = (i + 1) + "."); }
+  function evItems(){
+    return [...$("evList").children].map(r => ({
+      type: r.querySelector(".ev-type").value.trim(), link: r.querySelector(".ev-link").value.trim(), row: r
+    })).filter(e => e.link || (e.type && e.type !== EV_DEFAULT));
+  }
+  function evUrl(l){ return l && !/^https?:/i.test(l) ? "https://" + l : l; }
+  $("evAdd").addEventListener("click", () => evRow("", "").querySelector(".ev-type").focus());
+  $("evList").addEventListener("click", e => {
+    if (!e.target.classList.contains("ev-x")) return;
+    e.target.closest(".ev-row").remove();
+    if (!$("evList").children.length) evRow("", "");
+    renumberEv();
+  });
+  $("evList").addEventListener("input", e => e.target.classList.remove("bad"));
+  evRow(EV_DEFAULT, "");
+
   // ---------- проверка ----------
   const LINK = /^(https?:\/\/)?[^\s\/.]+(\.[^\s\/.]+)+(\/\S*)?$/i;
   function validate(){
@@ -106,8 +135,13 @@
     document.querySelectorAll(".f.req").forEach(el => {
       if (!el.value.trim()){ el.classList.add("bad"); ok = false; first = first || el; }
     });
-    const bc = $("bodycam");
-    if (bc.value.trim() && !LINK.test(bc.value.trim())){ bc.classList.add("bad"); ok = false; first = first || bc; status("Это не похоже на ссылку. Вставь адрес видео целиком.", "err"); }
+    let badLink = false;
+    evItems().forEach(e => {
+      const t = e.row.querySelector(".ev-type"), l = e.row.querySelector(".ev-link");
+      if (!e.type){ t.classList.add("bad"); ok = false; first = first || t; }
+      if (e.link && !LINK.test(e.link)){ l.classList.add("bad"); ok = false; badLink = true; first = first || l; }
+    });
+    if (badLink) status("Это не похоже на ссылку. Вставь адрес целиком.", "err");
     else if (!ok) status("Заполни подсвеченные красным поля.", "err");
     if (first) first.focus();
     return ok;
@@ -122,25 +156,23 @@
       scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false,
       onclone: doc => {
         const p = doc.getElementById("paper"); p.classList.add("rendering");
+        // приложение собираем текстом: «N. Вид: ссылка»
+        const evs = evItems(), list = doc.getElementById("evList");
+        doc.getElementById("evAdd").remove();
+        if (!evs.length) p.querySelector(".appendix").remove();
+        else list.innerHTML = evs.map((e, i) => `<div class="app-row">${i + 1}. ${esc(cap(e.type || "Материал"))}${e.link ? `: <span class="ev-url">${esc(e.link)}</span>` : ""}</div>`).join("");
         p.querySelectorAll("input.f").forEach(el => {
           const s = doc.createElement("span");
           let v = el.value.trim();
           if (el.id === "fromName" && n) v = n.short;
-          if (el.id === "bodycam") { el.remove(); return; }
           if (el.id === "tRank") v = v.toLowerCase();
           s.textContent = v; el.replaceWith(s);
         });
         p.querySelectorAll("textarea.f").forEach(el => {
           const d = doc.createElement("div");
           d.style.whiteSpace = "pre-wrap"; d.style.textAlign = "justify";
-          const tv = el.value.trim(); d.textContent = el.id === "proof" ? cap(tv) : (tv || "—"); el.replaceWith(d);
+          const tv = el.value.trim(); d.textContent = tv || "—"; el.replaceWith(d);
         });
-        const hasBc = !!$("bodycam").value.trim(), hasPr = !!$("proof").value.trim();
-        p.querySelectorAll(".bc-colon").forEach(e => e.remove());
-        if (!hasBc) doc.getElementById("appendixRow").remove();
-        if (!hasPr) doc.getElementById("appendixRow2").remove();
-        else if (!hasBc) doc.getElementById("app2num").textContent = "1.";
-        if (!hasBc && !hasPr) p.querySelector(".appendix").remove();
         if (!$("stampOn").checked) doc.getElementById("stamp").remove();
       }
     });
@@ -175,20 +207,24 @@
   // ---------- отправка ----------
   function buildPayload(){
     const roles = (C.roles||[]).filter(Boolean);
-    const bc = $("bodycam").value.trim();
-    const url = bc && !/^https?:/i.test(bc) ? "https://" + bc : bc;
     const lines = [
       roles.map(r => `<@&${r}>`).join(" "),
       `📄 **РАПОРТ №${$("num").value.trim()}** о совершении дисциплинарного проступка`,
       `**От:** ${$("fromPos").value.trim()}, ${$("fromRank").value.trim()} ${$("fromName").value.trim()}`,
       `**Нарушитель:** ${$("tRank").value.trim()} ${$("tName").value.trim()} | паспорт ${$("tPass").value.trim()}`
     ];
-    if (url) lines.push(`**Приложение:** [Боди камера](${url})`);
+    const evs = evItems();
+    if (evs.length) {
+      lines.push("**Приложение:**");
+      evs.forEach((e, i) => {
+        const t = cap(e.type || "Материал").replace(/[\[\]]/g, "");
+        lines.push(`${i + 1}. ` + (e.link ? `[${t}](<${evUrl(e.link)}>)` : t));
+      });
+    }
     return {
       username: "Военная полиция · Рапорты",
       content: lines.filter(Boolean).join("\n").replace(/@(everyone|here)/g, "@\u200b$1"),
-      allowed_mentions: { parse: [], roles },
-      attachments: [{ id: 0, filename: "raport.png" }]
+      allowed_mentions: { parse: [], roles }
     };
   }
 
@@ -201,11 +237,9 @@
       await takePaper();
       numStatus("Печатаю бланк…");
       const canvas = await renderPNG();
-      const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
       const fd = new FormData();
       fd.append("payload_json", JSON.stringify(buildPayload()));
-      if (!blob) throw new Error("Не удалось напечатать бланк, попробуй ещё раз");
-      fd.append("files[0]", new File([blob], "raport.png", { type: "image/png" }));
+      await VP_PAGES.addFiles(fd, canvas, "raport");
       fd.append("kind", "raport");
       fd.append("num", $("num").value.trim());
       numStatus("Отправляю в Discord…");
@@ -227,14 +261,14 @@
       await takePaper();
       numStatus("Печатаю бланк…");
       const canvas = await renderPNG();
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png"); a.download = `raport_${$("num").value.replace(/[^\wА-я-]/g,"_")}.png`; a.click();
-      numStatus("Картинка скачана.", "ok");
+      const pg = VP_PAGES.download(canvas, `raport_${$("num").value.replace(/[^\wА-я-]/g,"_")}`);
+      numStatus(pg > 1 ? `Скачано листов: ${pg}.` : "Картинка скачана.", "ok");
     } catch (e) { status("Ошибка: " + e.message, "err"); } finally { busy(false); }
   });
 
   $("clear").addEventListener("click", () => {
-    ["tRank","tName","tPass","what","norms","proof","factors","bodycam"].forEach(id => { $(id).value = ""; $(id).classList.remove("bad"); });
+    ["tRank","tName","tPass","what","norms","factors"].forEach(id => { $(id).value = ""; $(id).classList.remove("bad"); });
+    $("evList").innerHTML = ""; evRow(EV_DEFAULT, "");
     document.querySelectorAll("input[data-fit]").forEach(fit);
     document.querySelectorAll("textarea.f").forEach(grow);
     dropPaper();
@@ -242,7 +276,7 @@
   });
 
   // для автотеста
-  window.__vp = { renderPNG, buildPayload, validate };
+  window.__vp = { renderPNG, buildPayload, validate, evRow, evItems };
 
   function busy(b){ ["send","download"].forEach(id => $(id).disabled = b); }
   function status(t, cls){ const s = $("status"); s.textContent = t; s.className = "status " + (cls||""); }

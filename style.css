@@ -31,13 +31,13 @@ body{margin:0;background:radial-gradient(ellipse at top,#26302c 0%,#14181a 60%) 
 .hdr{text-align:center;font-size:17px;line-height:1.25;margin-top:6px;text-transform:uppercase}
 .addressee{margin:16px 0 0 auto;width:300px;font-size:16px;line-height:1.35}
 .title{text-align:center;font-size:30px;font-weight:700;letter-spacing:4px;margin:18px 0 0;font-family:"Times New Roman",Tinos,serif}
-.subtitle{text-align:center;font-weight:700;font-size:15.5px}
-.meta{display:flex;justify-content:space-between;align-items:baseline;margin-top:6px;font-size:15.5px}
+.subtitle{text-align:center;font-weight:700;font-size:16px}
+.meta{display:flex;justify-content:space-between;align-items:baseline;margin-top:6px;font-size:16px}
 .rule{border-top:1px solid #000;margin:8px 0 14px}
 .para{text-indent:48px;text-align:justify;margin:0 0 8px}
 .items{margin:4px 0 10px;padding-left:24px}
 .items li{margin-bottom:6px;text-align:justify}
-.appendix{margin-top:10px;font-size:15.5px}
+.appendix{margin-top:10px;font-size:16px}
 
 /* поля ввода, стилизованные под текст документа */
 .f{font:inherit;color:#000;background:var(--edit);border:none;border-bottom:1px dashed var(--editb);padding:0 3px;outline:none;border-radius:2px}
@@ -50,7 +50,7 @@ textarea.f{display:block;width:100%;resize:none;overflow:hidden;line-height:1.5;
 
 /* подпись */
 .sign{display:flex;justify-content:space-between;align-items:center;margin-top:46px;min-height:170px}
-.sign-left{display:flex;flex-direction:column;line-height:1.35;font-size:15.5px;width:250px;flex:0 0 250px;min-width:0}
+.sign-left{display:flex;flex-direction:column;line-height:1.35;font-size:16px;width:250px;flex:0 0 250px;min-width:0}
 .sign-left .f{align-self:flex-start}
 .sign-left textarea.pos{align-self:stretch;width:100%;max-width:250px;text-align:left;line-height:1.25;white-space:pre-wrap;word-break:break-word;overflow:hidden}
 .pos-suggest{position:fixed;z-index:30;background:#fff;border:1px solid #d9b84a;border-radius:4px;box-shadow:0 8px 24px rgba(0,0,0,.4);max-height:240px;overflow:auto;padding:4px}
@@ -63,7 +63,7 @@ textarea.f{display:block;width:100%;resize:none;overflow:hidden;line-height:1.5;
 #autoText{position:absolute;left:12px;top:4px;font-family:"Marck Script",cursive;font-size:46px;color:#16205e;white-space:nowrap;transform-origin:left center}
 #autoFlourish{position:absolute;left:0;top:0;width:240px;height:100px;overflow:visible}
 #autoFlourish path{fill:none;stroke:#16205e;stroke-width:2.2;stroke-linecap:round}
-.sign-right{width:180px;text-align:right;font-size:15.5px}
+.sign-right{width:180px;text-align:right;font-size:16px}
 .sign-hint{font-size:11px;color:#a08a3c;font-style:italic;font-family:Arial,sans-serif}
 
 /* режим рендера картинки */
@@ -166,3 +166,20 @@ textarea.f{display:block;width:100%;resize:none;overflow:hidden;line-height:1.5;
 .vp-auth{display:flex;align-items:center;gap:4px;margin-left:12px;font-size:13px;color:#e9e6dc;white-space:nowrap}
 .vp-auth button{background:transparent;color:var(--gold2);border:1px solid #3a4440;border-radius:4px;padding:6px 10px;cursor:pointer;font:13px "Segoe UI",sans-serif}
 .vp-auth button:hover{border-color:var(--gold)}
+
+/* свободная отработка и список приложений */
+.duty-edit{display:flex;flex-direction:column;gap:4px}
+.duty-row{display:flex;gap:4px;align-items:center;font-size:13px}
+.duty-row span{width:18px;opacity:.7}
+.duty-row input{flex:1;min-width:0;background:#111614;color:#e9e6dc;border:1px solid #3a4440;border-radius:3px;padding:5px 6px;font-size:13px}
+.duty-row .x,.ev-x{width:24px;height:24px;border:1px solid #4a5550;background:#2a322f;color:#e9e6dc;border-radius:3px;cursor:pointer;line-height:1;padding:0}
+.row-btns{display:flex;gap:6px;margin:6px 0 4px}
+.mini{flex:1;padding:6px;border:1px solid #4a5550;background:#2a322f;color:#e9e6dc;border-radius:3px;cursor:pointer;font-family:Oswald,sans-serif;font-size:12px;letter-spacing:.5px;text-transform:uppercase}
+.ev-row{display:flex;gap:4px;align-items:baseline}
+.ev-row .ev-n{flex:0 0 auto}
+.ev-row input.f.ev-type{min-width:160px}
+.ev-row input.f.link{flex:1;min-width:120px}
+.paper .ev-x{flex:0 0 auto;font-size:14px;width:20px;height:20px}
+.paper .ev-add{margin-top:4px;border:1px dashed #b8a25a;background:#fffbea;color:#7a6320;border-radius:3px;padding:2px 10px;cursor:pointer;font:14px "Times New Roman",Tinos,serif}
+.paper.rendering .ev-x,.paper.rendering .ev-add{display:none}
+.ev-url{word-break:break-all}
